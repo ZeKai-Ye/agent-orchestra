@@ -100,6 +100,25 @@ $env:PYTHONPATH = "$PWD\src"; python -m unittest discover -s tests -t . -v
 
 单机假设：SQLite 一份文件，多容器同主机可用；多主机要换 Postgres，替换点是 `leases.LeaseManager`。
 
+## 文档与长期结构
+
+| 文件 | 回答什么 |
+| --- | --- |
+| [docs/01](E:/opencode-playfield/projects/agent-orchestra/docs/01-feasibility-review.md) | 原方案可行吗，哪些必须改 |
+| [docs/02](E:/opencode-playfield/projects/agent-orchestra/docs/02-architecture.md) | 组件与契约 |
+| [docs/03](E:/opencode-playfield/projects/agent-orchestra/docs/03-data-model-and-protocol.md) | 存什么、状态机与租约怎么走 |
+| [docs/04](E:/opencode-playfield/projects/agent-orchestra/docs/04-gates-risk-security.md) | 什么必须通过，谁有权批 |
+| [docs/05](E:/opencode-playfield/projects/agent-orchestra/docs/05-metrics-and-roadmap.md) | 怎么衡量、按什么顺序建 |
+| [docs/06](E:/opencode-playfield/projects/agent-orchestra/docs/06-references.md) | 外部参考架构与论文（含"支持/反驳了哪一条"） |
+| [docs/07](E:/opencode-playfield/projects/agent-orchestra/docs/07-implementation-log.md) | **实际实现了什么 / 试过什么 / 放弃了什么** |
+| [docs/08](E:/opencode-playfield/projects/agent-orchestra/docs/08-development-guide.md) | 加门禁、租约模式、agent 适配器的固定动作 |
+| [ROADMAP.md](E:/opencode-playfield/projects/agent-orchestra/ROADMAP.md) | Now / Next / Later，以及不做清单 |
+| [CONTRIBUTING.md](E:/opencode-playfield/projects/agent-orchestra/CONTRIBUTING.md) | 提交规约、门禁要求、PR 检查单 |
+| [CHANGELOG.md](E:/opencode-playfield/projects/agent-orchestra/CHANGELOG.md) | 版本变更 |
+| [adr/](E:/opencode-playfield/projects/agent-orchestra/adr/0001-leases-in-sqlite-not-in-git.md) | 已冻结的决策：租约入 SQLite、核心零依赖、审批即令牌 |
+
+维护规则：**代码行为变了但 `docs/07` 没动，算未完成**；改冻结决策必须新开 ADR 并附证伪条件。
+
 ## 状态
 
 开发中（骨架 + 方案）。技术栈：Python 3.12 / SQLite(WAL) / git worktree / PowerShell 脚本。
