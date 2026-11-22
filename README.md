@@ -122,3 +122,7 @@ $env:PYTHONPATH = "$PWD\src"; python -m unittest discover -s tests -t . -v
 ## 状态
 
 开发中（骨架 + 方案）。技术栈：Python 3.12 / SQLite(WAL) / git worktree / PowerShell 脚本。
+
+## License
+
+MIT，见 [LICENSE](LICENSE)。
