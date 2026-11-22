@@ -1,0 +1,14 @@
+# orchestrator state (never committed: it is not the source of truth for review)
+.orchestra/
+*.db
+*.db-wal
+*.db-shm
+# local test/demo scratch
+.tmp/
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+*.egg-info/
+build/
+dist/

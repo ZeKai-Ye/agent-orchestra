@@ -1,0 +1,74 @@
+# config/orchestra.toml - behaviour of the orchestrator inside one managed repo.
+# `orchestra init` copies this file into the target repo.
+
+[lease]
+# How long an agent may hold a lease before the reaper takes it back.
+default_ttl = 1800
+max_ttl = 28800
+
+[scheduler]
+# Admission control: claims are refused once WIP reaches this number.
+wip_limit = 16
+research_share = 0.10
+
+[gates]
+# Commands that must exit 0. Same list is used locally and in CI, so there is
+# exactly one definition of "green".
+impl = []
+merge = []
+
+[paths]
+# Touching these raises the risk class even if no rule matches.
+protected = ["config/**", "ledger/**"]
+
+# ---------------------------------------------------------------------------
+# Domains: one cut used for ownership, lease scope and CI shards. Keeping the
+# three aligned is the point; three different cuts is the expensive mistake.
+# ---------------------------------------------------------------------------
+[domains.core]
+paths = ["src/core"]
+owners = ["lineage-a"]
+
+[domains.api]
+paths = ["src/api", "contracts"]
+owners = ["lineage-b"]
+
+# ---------------------------------------------------------------------------
+# Patch-debt budget. Per-module line ceiling: a merge may not raise it, and a
+# refactor task is what earns headroom. Ratios (complexity/duplication) belong
+# in the gate commands, not here.
+# ---------------------------------------------------------------------------
+[debt.core]
+paths = ["src/core"]
+max_lines = 1200
+
+# ---------------------------------------------------------------------------
+# Risk rules. Signals come from the diff mechanically; the highest matching
+# class wins. T2 is never auto-approved.
+# ---------------------------------------------------------------------------
+[[risk.rule]]
+class = "T1"
+name = "public-contract"
+paths = ["contracts/**", "adr/**"]
+reason = "changes a versioned contract or a frozen decision"
+
+[[risk.rule]]
+class = "T1"
+name = "test-weakening"
+signals = ["deletes_tests", "adds_skip"]
+
+[[risk.rule]]
+class = "T1"
+name = "dependency-change"
+signals = ["adds_dependency"]
+
+[[risk.rule]]
+class = "T1"
+name = "migration"
+signals = ["migration"]
+
+[[risk.rule]]
+class = "T2"
+name = "irreversible"
+signals = ["irreversible_command"]
+paths = ["deploy/**", "infra/**"]
