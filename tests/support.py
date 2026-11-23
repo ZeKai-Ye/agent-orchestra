@@ -20,11 +20,13 @@ NOW = 1700000000
 TEST_ROOT = Path(os.environ.get("PI_SCRATCH_DIR") or tempfile.gettempdir()) / "orchestra-tests"
 
 
-def cli(repo, *args, now: int | None = NOW, expect: int | None = None):
+def cli(repo, *args, now: int | None = NOW, expect: int | None = None, env_extra: dict | None = None):
     env = os.environ.copy()
     env["PYTHONPATH"] = str(SRC) + os.pathsep + env.get("PYTHONPATH", "")
     if now is not None:
         env["ORCHESTRA_NOW"] = str(now)
+    if env_extra:
+        env.update(env_extra)
     proc = subprocess.run(
         [PY, "-m", "orchestra.cli", "--repo", str(repo), *[str(a) for a in args]],
         capture_output=True,

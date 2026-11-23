@@ -5,19 +5,46 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.2.0] - 2026-11-22
+
+M2 of the roadmap: admission control, resilience under a killed agent, evidence over time, and a
+reference adapter. No task-schema change, so v0.1.0 ledgers keep working.
+
 ### Added
 
-- `docs/06-references.md`: reference architectures and papers (arXiv API + GitHub Search API,
-  retrieved 2026-11-22), each mapped to the design decision it supports or contradicts.
-- `docs/07-implementation-log.md`: what is implemented, what was tried and reverted,
-  known limitations, and how to reproduce every claim.
-- `docs/08-development-guide.md`: how to add a gate step, a lease mode, an adapter; test and
-  release rules; the 30-minute onboarding order.
-- `ROADMAP.md`, `CONTRIBUTING.md`, `adr/` (template + three accepted decisions).
+- Budget envelopes with all-or-nothing pre-charge on claim: `intent:<id>` and `lineage:<name>`
+  scopes, `budget set|list`, `--cost` override. A refusal exits `5`, prints a machine-readable
+  reason, and releases the lease it had already taken.
+- Exit code `5` (`admission refused`) separates "wait and retry" from "this change is wrong".
+- Per-task file locks (`fslock`): six concurrent `task attempt` calls now persist all six updates;
+  id allocation takes a ledger-wide lock.
+- `status --append` writes a JSONL snapshot; `trend` reports first/last deltas per metric.
+- `gate run --worktree`: diff a per-task worktree while the ledger, state and config stay in the
+  main repository.
+- `tools/agent_adapter.py`: reference adapter that reads the brief, scrubs credentials from the
+  agent environment, runs the agent, and returns the gate verdict.
+- Chaos coverage: an agent is killed mid-task, the lease is reaped after its TTL, the task returns
+  to `proposed`, and another agent claims it.
+- ADR 0004 (OS locks for task files) and ADR 0005 (exit code 5 for admission refusal).
+- `docs/06-references.md`: fourteen arXiv entries and eight GitHub projects, each mapped to the
+  design decision it supports or contradicts.
+- `docs/07-implementation-log.md`: implemented / tried / abandoned, with reproduction commands.
+- `docs/08-development-guide.md`, `docs/README.md`, `CONTRIBUTING.md`, `ROADMAP.md`, `adr/`.
 
 ### Changed
 
-- `README.md` and `docs/README.md` now point at the full document map.
+- `task claim` charges budget by default (`[budget] default_claim_cost`); a repo without envelopes
+  behaves exactly as before, only spending is recorded.
+- Gate risk classification now persists through `ledger.update`, so it cannot overwrite a
+  concurrent transition.
+- Documentation map in `README.md`; MIT license noted.
+
+### Fixed
+
+- `budget list` crashed on a scope without a ceiling (format string applied to `"-"`).
+- `status` read `--append` from a variable that does not exist in that scope.
 
 ## [0.1.0] - 2026-11-22
 

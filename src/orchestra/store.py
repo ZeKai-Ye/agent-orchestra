@@ -171,21 +171,56 @@ class Store:
         return row is not None
 
     # -- budget (admission control) ----------------------------------------
-    def budget_spend(self, scope: str, amount: float, ceiling: float | None = None) -> bool:
-        """Pre-charge a budget scope. Returns False when the ceiling would break."""
+    def budget_set(self, scope: str, ceiling: float | None) -> None:
+        """Register or clear the envelope of a scope (spent is preserved)."""
 
         with self.immediate() as conn:
-            row = conn.execute("SELECT spent, ceiling FROM budget WHERE scope = ?", (scope,)).fetchone()
-            spent = 0.0 if row is None else float(row["spent"])
-            limit = ceiling if ceiling is not None else (None if row is None else row["ceiling"])
-            if limit is not None and spent + amount > float(limit):
-                return False
             conn.execute(
-                "INSERT INTO budget(scope, spent, ceiling) VALUES (?,?,?) "
-                "ON CONFLICT(scope) DO UPDATE SET spent = ?",
-                (scope, spent + amount, limit, spent + amount),
+                "INSERT INTO budget(scope, spent, ceiling) VALUES (?, 0, ?) "
+                "ON CONFLICT(scope) DO UPDATE SET ceiling = ?",
+                (scope, ceiling, ceiling),
             )
-            return True
+
+    def budget_charge(self, charges: list[tuple[str, float]]) -> tuple[bool, dict]:
+        """Charge several scopes in one transaction; all or nothing.
+
+        Returns ``(ok, detail)``. On refusal ``detail`` names the scope that broke
+        its envelope, so the caller can emit a machine-readable reason instead of
+        a sentence.
+        """
+
+        prepared: list[tuple[str, float, float | None]] = []
+        with self.immediate() as conn:
+            for scope, amount in charges:
+                row = conn.execute(
+                    "SELECT spent, ceiling FROM budget WHERE scope = ?", (scope,)
+                ).fetchone()
+                spent = 0.0 if row is None else float(row["spent"])
+                ceiling = None if row is None else row["ceiling"]
+                total = spent + float(amount)
+                if ceiling is not None and total > float(ceiling):
+                    return False, {
+                        "reason": "budget_exceeded",
+                        "scope": scope,
+                        "spent": spent,
+                        "amount": float(amount),
+                        "ceiling": float(ceiling),
+                    }
+                prepared.append((scope, total, ceiling))
+            for scope, total, ceiling in prepared:
+                conn.execute(
+                    "INSERT INTO budget(scope, spent, ceiling) VALUES (?,?,?) "
+                    "ON CONFLICT(scope) DO UPDATE SET spent = ?",
+                    (scope, total, ceiling, total),
+                )
+        return True, {"charged": [scope for scope, _amount, _ceiling in prepared]}
+
+    def budget_spend(self, scope: str, amount: float, ceiling: float | None = None) -> bool:
+        """Single-scope convenience wrapper around :meth:`budget_charge`."""
+
+        if ceiling is not None:
+            self.budget_set(scope, ceiling)
+        return self.budget_charge([(scope, amount)])[0]
 
     def budget_state(self) -> list[dict]:
         rows = self.conn.execute("SELECT scope, spent, ceiling FROM budget ORDER BY scope").fetchall()

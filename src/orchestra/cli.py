@@ -18,6 +18,7 @@ from .gates import GateError, changed_files, diff_text, git, resolve_base, run_g
 from .leases import LeaseConflict, LeaseError, LeaseManager
 from .ledger import LedgerError, StateError, TaskLedger
 from .policy import (
+    AdmissionError,
     ApprovalError,
     PolicyError,
     classify,
@@ -30,7 +31,7 @@ from .policy import (
 )
 from .store import Store
 
-OK, FAIL, USAGE, CONFLICT, NEEDS_APPROVAL = 0, 1, 2, 3, 4
+OK, FAIL, USAGE, CONFLICT, NEEDS_APPROVAL, ADMISSION = 0, 1, 2, 3, 4, 5
 
 
 def _print(args, payload: dict, text: str | None = None) -> None:
@@ -121,6 +122,16 @@ def cmd_status(ctx: Ctx) -> int:
         "budget": ctx.store.budget_state(),
         "recent_events": ctx.store.recent_events(10),
     }
+    if getattr(ctx.args, "append", False) or getattr(ctx.args, "out", None):
+        target = Path(ctx.args.out) if ctx.args.out else ctx.repo / ".orchestra" / "metrics" / "snapshots.jsonl"
+        snapshot = {key: value for key, value in payload.items() if key != "recent_events"}
+        snapshot["at"] = int(ctx.clock.now())
+        snapshot["iso"] = ctx.clock.iso()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(snapshot, sort_keys=True, ensure_ascii=False) + "\n")
+        payload["snapshot"] = str(target)
+
     text = (
         f"tasks={len(tasks)} wip={payload['wip']}/{payload['wip_limit']} "
         f"leases={payload['leases']['active']} "
@@ -197,10 +208,12 @@ def cmd_task_claim(ctx: Ctx) -> int:
     if task["state"] != "proposed":
         raise LedgerError(f"{task['id']} is {task['state']}, only proposed tasks can be claimed")
     if ctx.config:
-        active = ctx.ledger.list()
-        wip = sum(1 for t in active if t["state"] in ("claimed", "in_progress", "review"))
+        wip = sum(1 for item in ctx.ledger.list() if item["state"] in ("claimed", "in_progress", "review"))
         if wip >= ctx.config.wip_limit():
-            raise LedgerError(f"WIP limit reached ({wip}/{ctx.config.wip_limit()}); admission control refuses the claim")
+            raise AdmissionError(
+                f"WIP limit reached ({wip}/{ctx.config.wip_limit()}); admission refuses the claim",
+                {"reason": "wip_limit", "wip": wip, "limit": ctx.config.wip_limit()},
+            )
     duplicates = ctx.ledger.find_by_fingerprint(task["fingerprint"], exclude=task["id"])
     lease = ctx.leases.acquire(
         task_id=task["id"],
@@ -211,12 +224,43 @@ def cmd_task_claim(ctx: Ctx) -> int:
         lineage=task["lineage"],
         token=args.token,
     )
-    note = "claimed"
-    if duplicates:
-        note += f"; duplicate-suspects={','.join(t['id'] for t in duplicates)}"
-        print(f"warning: same fingerprint already active: {', '.join(t['id'] for t in duplicates)}", file=sys.stderr)
-    ctx.ledger.transition(task["id"], "claimed", actor=args.holder, note=note, extra={"lease": lease})
-    _print(args, {"task": task["id"], "lease": lease, "duplicates": [t["id"] for t in duplicates]}, lease["group"])
+    cost = args.cost if args.cost is not None else (ctx.config.claim_cost() if ctx.config else 0.0)
+    charged: list[str] = []
+    try:
+        if cost > 0:
+            scopes = [
+                (f"intent:{task.get('intent') or 'none'}", cost),
+                (f"lineage:{task['lineage']}", cost),
+            ]
+            ok, detail = ctx.store.budget_charge(scopes)
+            if not ok:
+                raise AdmissionError(
+                    "budget envelope exhausted: scope={scope} spent={spent:.2f} + {amount:.2f} > {ceiling:.2f}".format(
+                        **detail
+                    ),
+                    detail,
+                )
+            charged = [scope for scope, _amount in scopes]
+        note = "claimed"
+        if duplicates:
+            note += f"; duplicate-suspects={','.join(t['id'] for t in duplicates)}"
+            print(
+                f"warning: same fingerprint already active: {', '.join(t['id'] for t in duplicates)}",
+                file=sys.stderr,
+            )
+        ctx.ledger.transition(task["id"], "claimed", actor=args.holder, note=note, extra={"lease": lease})
+    except BaseException:
+        # The lease was taken before the budget was charged; never leak it on refusal.
+        ctx.leases.release(lease["group"])
+        raise
+    payload = {
+        "task": task["id"],
+        "lease": lease,
+        "duplicates": [t["id"] for t in duplicates],
+        "budget_charged": charged,
+        "cost": cost,
+    }
+    _print(args, payload, lease["group"])
     return OK
 
 
@@ -336,6 +380,7 @@ def cmd_gate_run(ctx: Ctx) -> int:
         base=args.base,
         token=token,
         out_dir=Path(args.out_dir) if args.out_dir else None,
+        worktree=Path(args.worktree) if args.worktree else None,
     )
     lines = [f"{'PASS' if step['ok'] else 'FAIL'}\t{step['name']}\t{step['detail']}" for step in result["steps"]]
     _print(args, result, "\n".join(lines) + f"\n=> {'PASS' if result['ok'] else 'FAIL'} risk={result['risk'].get('class', '-')}")
@@ -390,6 +435,77 @@ def cmd_approval_verify(ctx: Ctx) -> int:
 
 
 # --------------------------------------------------------------------------
+# budget / trend
+# --------------------------------------------------------------------------
+def cmd_budget_set(ctx: Ctx) -> int:
+    args = ctx.args
+    ctx.store.budget_set(args.scope, args.ceiling)
+    state = {row["scope"]: row for row in ctx.store.budget_state()}
+    _print(args, state, f"{args.scope}\tceiling={args.ceiling}")
+    return OK
+
+
+def cmd_budget_list(ctx: Ctx) -> int:
+    rows = ctx.store.budget_state()
+    lines = []
+    for row in rows:
+        ceiling = "-" if row["ceiling"] is None else f"{row['ceiling']:.2f}"
+        lines.append(f"{row['scope']}\t{row['spent']:.2f}/{ceiling}")
+    _print(ctx.args, {"budget": rows}, "\n".join(lines) or "(no envelopes registered)")
+    return OK
+
+
+def _metric(row: dict, dotted: str):
+    node: object = row
+    for part in dotted.split("."):
+        if not isinstance(node, dict) or part not in node:
+            return None
+        node = node[part]
+    return node
+
+
+def cmd_trend(ctx: Ctx) -> int:
+    args = ctx.args
+    target = Path(args.out) if args.out else ctx.repo / ".orchestra" / "metrics" / "snapshots.jsonl"
+    if not target.exists():
+        raise LedgerError(f"no metric snapshots at {target}; run `status --append` first")
+    rows = [json.loads(line) for line in target.read_text(encoding="utf-8").splitlines() if line.strip()]
+    if args.last:
+        rows = rows[-args.last :]
+    if not rows:
+        raise LedgerError("snapshot file is empty")
+    first, last = rows[0], rows[-1]
+    keys = [
+        "tasks.total",
+        "wip",
+        "leases.active",
+        "leases.expired_24h",
+        "gates.passed_24h",
+        "gates.failed_24h",
+    ]
+    series = []
+    for key in keys:
+        start, end = _metric(first, key), _metric(last, key)
+        delta = (end - start) if isinstance(start, (int, float)) and isinstance(end, (int, float)) else None
+        series.append({"metric": key, "first": start, "last": end, "delta": delta})
+    hours = None
+    if isinstance(first.get("at"), (int, float)) and isinstance(last.get("at"), (int, float)):
+        hours = round((last["at"] - first["at"]) / 3600, 2)
+    payload = {
+        "snapshots": len(rows),
+        "from": first.get("iso"),
+        "to": last.get("iso"),
+        "hours": hours,
+        "series": series,
+    }
+    text = "\n".join(
+        [f"{len(rows)} snapshots over {hours}h"] + [f"{item['metric']:<22} {item['first']} -> {item['last']}  delta={item['delta']}" for item in series]
+    )
+    _print(args, payload, text)
+    return OK
+
+
+# --------------------------------------------------------------------------
 # parser
 # --------------------------------------------------------------------------
 def build_parser() -> argparse.ArgumentParser:
@@ -408,7 +524,13 @@ def build_parser() -> argparse.ArgumentParser:
     node = add("init", cmd_init, "create ledger layout and default config")
     node.add_argument("--force", action="store_true", help="overwrite config")
 
-    add("status", cmd_status, "metrics snapshot (WIP, leases, gates, budget)")
+    status_node = add("status", cmd_status, "metrics snapshot (WIP, leases, gates, budget)")
+    status_node.add_argument("--append", action="store_true", help="append the snapshot to the metrics JSONL")
+    status_node.add_argument("--out", default=None, help="JSONL path (default: .orchestra/metrics/snapshots.jsonl)")
+
+    trend = add("trend", cmd_trend, "read the metrics JSONL and report first/last deltas")
+    trend.add_argument("--last", type=int, default=50)
+    trend.add_argument("--out", default=None)
 
     worktree = add("worktree", lambda ctx: USAGE, "worktree helpers")
     worktree_sub = worktree.add_subparsers(dest="sub", required=True)
@@ -448,6 +570,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--mode", default="write", choices=["read", "write", "module", "repo"])
     p.add_argument("--ttl", type=int, default=None)
     p.add_argument("--token", default=None)
+    p.add_argument("--cost", type=float, default=None, help="override the cost charged to the envelopes")
     p.set_defaults(handler=cmd_task_claim)
 
     p = task_sub.add_parser("transition", help="move a task through the state machine")
@@ -501,6 +624,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", default=None)
     p.set_defaults(handler=cmd_lease_snapshot)
 
+    budget = add("budget", lambda ctx: USAGE, "cost envelopes (admission control)")
+    budget_sub = budget.add_subparsers(dest="sub", required=True)
+
+    p = budget_sub.add_parser("set", help="register or clear the ceiling of a scope")
+    p.add_argument("--scope", required=True, help="intent:<id> or lineage:<name>")
+    p.add_argument("--ceiling", type=float, required=True)
+    p.set_defaults(handler=cmd_budget_set)
+
+    p = budget_sub.add_parser("list", help="show envelopes and spend")
+    p.set_defaults(handler=cmd_budget_list)
+
     risk = add("risk", lambda ctx: USAGE, "risk classification")
     risk_sub = risk.add_subparsers(dest="sub", required=True)
     p = risk_sub.add_parser("classify", help="classify the current diff")
@@ -516,6 +650,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--token", default=None)
     p.add_argument("--token-file", default=None)
     p.add_argument("--out-dir", default=None)
+    p.add_argument("--worktree", default=None, help="diff this worktree while the ledger stays in --repo")
     p.set_defaults(handler=cmd_gate_run)
 
     approval = add("approval", lambda ctx: USAGE, "human approval tokens")
@@ -579,6 +714,10 @@ def main(argv: list[str] | None = None) -> int:
     ctx = Ctx(args)
     try:
         return int(args.handler(ctx))
+    except AdmissionError as exc:
+        detail = f" {json.dumps(exc.detail, sort_keys=True, ensure_ascii=False)}" if exc.detail else ""
+        print(f"admission refused: {exc}{detail}", file=sys.stderr)
+        return ADMISSION
     except LeaseConflict as exc:
         print(f"lease conflict: {exc}", file=sys.stderr)
         return CONFLICT

@@ -2,7 +2,7 @@
 
 这份文档是**流水账**，不是方案。方案在 01–05，这里只记录事实：哪一行代码真在跑、哪个想法试过、哪个想法被自己推翻。目的是下一次改动前不用重新踩一遍。
 
-版本：v0.1.0（提交 `1a1e943 chore: initial scaffold`，本文件为后续提交）。
+版本：v0.2.0（v0.1.0 对应提交 `1a1e943 chore: initial scaffold`；M2 增补见 §7）。
 
 ## 1. 当前实现（可运行、有测试）
 
@@ -53,7 +53,7 @@
 ## 4. 明确没做（不是遗漏，是边界）
 
 - 真实分片 CI、消费者契约测试执行、mutation 执行、OTel 导出、Postgres 租约、具体模型适配器、Web 签字台。
-- 任务文件的并发写保护（两个进程同时改同一任务会丢更新）。当前靠"一任务一持有者 + 租约"避免，属已知薄弱点。
+- ~~任务文件的并发写保护~~：v0.2.0 已解决，走 `fslock`（见 §7 与 ADR 0004）。
 - 跨仓库协作、子模块、monorepo 特化。
 
 ## 5. 已知限制（会在下一版暴露的）
@@ -64,7 +64,7 @@
 | HMAC 对称密钥 | 需要"人持有私钥、机器只验签" | M5 换 Ed25519，令牌格式已版本化（`oap1.`） |
 | 关键词级风险信号 | 想要 AST 级判断（如"删了断言但保留了 test 名"） | M6 接 tree-sitter |
 | 无故障注入 | 想知道 agent 崩溃/断网时是否自愈 | M2 加 chaos 用例（kill -9 后 `lease reap`） |
-| 指标只有快照 | 想看趋势 | M2 把 `status --json` 落成 JSONL 时间序列 |
+| 指标只有快照 | 想看趋势 | **已解决**：`status --append` + `trend`（§7） |
 
 ## 6. 复现本文所有结论
 
@@ -74,3 +74,35 @@ $env:PYTHONPATH = "$PWD\src"
 python -m unittest tests.test_core.LeaseTests.test_eight_agents_race_for_one_path -v
 python -m unittest tests.test_gates -v
 ```
+
+## 7. v0.2.0 增补（M2：准入、韧性、证据、适配器）
+
+### 7.1 新增能力
+
+| 能力 | 位置 | 证据 | 限制 |
+| --- | --- | --- | --- |
+| 预算封套（`intent:` / `lineage:` 两个 scope，一次事务全有或全无） | `store.budget_charge`、`cli.cmd_task_claim` | `test_claim_charges_intent_and_lineage` | 单位是任意数，不做货币换算 |
+| 准入拒绝：退出码 `5` + 机器可读 reason，租约自动释放 | `policy.AdmissionError`、`cli.main` | `test_budget_refusal_is_exit_5_and_releases_the_lease`、`test_wip_limit_refuses_with_reason` | 只有 WIP 与预算两类 |
+| `budget set/list`、`claim --cost` | `cli` | `test_cost_zero_does_not_charge` | 无预算变更审计流（只有 spent 累计） |
+| 任务文件 OS 锁 + id 分配锁 | `fslock.py`、`ledger.update/_task_lock` | `test_concurrent_attempts_do_not_lose_updates`（6 进程全中）、`LockTests` | 单机；7 层嵌套调用会超时而不是死等 |
+| 崩溃回收：agent 被 kill 后靠 TTL 释放 | `leases.reap` | `test_killed_holder_is_reaped_after_ttl`（真 kill 子进程） | 回收依赖有人跑 `lease reap`，没有守护进程 |
+| 指标时间序列与趋势 | `cli.cmd_status --append`、`cli.cmd_trend` | `test_status_append_and_trend` | 只存快照，不做聚合/导出 |
+| `gate run --worktree`：diff 在 worktree、账簿在主仓 | `gates.run_gate(worktree=...)` | `test_full_loop_with_a_fake_agent` | 只支持同一 git 目录下的 worktree |
+| 参考适配器（读 brief、擦凭据、跑 agent、取门禁结论） | `tools/agent_adapter.py` | `AdapterTests` 4 例 | 用假 agent 验证；真 CLI agent 未接入（M3 第一项） |
+
+测试规模：37 → **51**，全绿约 80 秒（worktree 与 kill 用例较慢）。
+
+### 7.2 本轮踩到并修掉的
+
+8. **`budget list` 的格式串**：`f"{'-' if row['ceiling'] is None else row['ceiling']:.2f}"` 的条件表达式整体吃了 `:.2f`，ceiling 为空时对 `"-"` 做浮点格式化直接抛错。改成先算 `ceiling` 字符串。
+9. **`status --append` 引用了不存在的变量**：`cmd_status` 里只绑了 `ctx.args`，我按习惯写了 `args`，`NameError` 把 status 整个打挂。这类错误只会在"新加分支"里出现，靠现有用例回归才发现——所以 §4 的"一不变量一用例"之外，还加了一条：**动共享命令就顺手跑一遍它的最小用例**。
+
+### 7.3 已知限制（更新后）
+
+已解决：任务文件并发写、指标只有快照、无故障注入。
+
+仍存在：SQLite 单机；HMAC 对称密钥；风险信号是关键词级；适配器只验证到假 agent；回收无守护进程（靠定时 `reap`）。
+
+### 7.4 刻意没做
+
+没有自己去写 merge queue。`docs/06` 查到 `uber/submitqueue` 与 `funador/claude-code-merge-queue` 已经解决同一问题，M3 的第一项是**评估后选型**，而不是直接开写——这是本轮唯一改变原计划顺序的地方。

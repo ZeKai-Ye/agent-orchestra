@@ -24,7 +24,9 @@ src/orchestra/          控制面本体（stdlib only，禁止引入第三方依
   policy.py             配置 + 风险 + 令牌
   gates.py              门禁编排；所有 git 访问都在这里
   store.py              SQLite schema 与事务原语（只被 leases/policy/gates 调用）
+  fslock.py             OS 咨询锁；任务文件的临界区靠它串行化
   paths.py / clock.py   纯函数；不 import 其它模块
+tools/agent_adapter.py  参考适配器（不属于包；只走 CLI 契约）
 tests/                  一不变量一用例；用临时仓库，不 mock git
 docs/                   方案与事实
 adr/                    决策记录

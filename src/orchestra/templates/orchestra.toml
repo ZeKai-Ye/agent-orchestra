@@ -11,6 +11,11 @@ max_ttl = 28800
 wip_limit = 16
 research_share = 0.10
 
+[budget]
+# Cost charged to every claim, in whatever unit your envelopes use (agent-hours,
+# dollars, tokens - the number is opaque to the orchestrator).
+default_claim_cost = 1.0
+
 [gates]
 # Commands that must exit 0. Same list is used locally and in CI, so there is
 # exactly one definition of "green".

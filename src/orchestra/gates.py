@@ -121,8 +121,12 @@ def run_gate(
     base: str | None = None,
     token: str | None = None,
     out_dir: Path | None = None,
+    worktree: Path | None = None,
 ) -> dict:
     repo = Path(repo)
+    # git and the checked-out tree can live in a per-task worktree, while the ledger
+    # and the coordination state stay in the main repository.
+    work = Path(worktree) if worktree else repo
     steps: list[dict] = []
     requires_approval = False
     def step(name: str, ok: bool, detail: str = "", **extra) -> None:
@@ -155,9 +159,9 @@ def run_gate(
     used, cap = task["attempt"]["used"], task["attempt"]["max"]
     step("attempt-budget", used < cap, f"attempts {used}/{cap} (exhausted -> escalate, do not retry)")
 
-    base_ref = resolve_base(repo, base)
-    changes = changed_files(repo, base_ref) if _git(repo, "rev-parse", "--verify", "--quiet", base_ref)[0] == 0 else []
-    body = diff_text(repo, base_ref) if changes else ""
+    base_ref = resolve_base(work, base)
+    changes = changed_files(work, base_ref) if _git(work, "rev-parse", "--verify", "--quiet", base_ref)[0] == 0 else []
+    body = diff_text(work, base_ref) if changes else ""
     step("diff", bool(changes), f"{len(changes)} changed path(s) against {base_ref}")
 
     outside = [path for _status, path in changes if not any(is_within(path, scope) for scope in task["paths"])]
@@ -169,8 +173,7 @@ def run_gate(
     )
 
     risk = classify(changes, body, config.risk_rules(), protected=config.protected_patterns())
-    task["risk"] = risk.as_dict()
-    ledger.save(task)
+    ledger.update(task_id, lambda current: current.__setitem__("risk", risk.as_dict()))
     approval = None
     if risk.cls == "T2":
         if not token:
@@ -196,7 +199,7 @@ def run_gate(
     for command in config.gate_commands(stage):
         proc = subprocess.run(
             command,
-            cwd=str(repo),
+            cwd=str(work),
             shell=True,
             capture_output=True,
             text=True,
@@ -215,7 +218,7 @@ def run_gate(
         if ceiling <= 0:
             continue
         paths = [str(p) for p in spec.get("paths", []) or []]
-        total, offenders = _count_lines(repo, paths)
+        total, offenders = _count_lines(work, paths)
         step(
             f"debt: {module}",
             total <= ceiling and not offenders,
@@ -223,7 +226,7 @@ def run_gate(
         )
 
     if stage == "merge":
-        message = head_message(repo)
+        message = head_message(work)
         has_trailer = f"Task-Id: {task_id}" in message
         step("provenance", has_trailer, "commit trailer Task-Id present" if has_trailer else "missing Task-Id trailer")
 

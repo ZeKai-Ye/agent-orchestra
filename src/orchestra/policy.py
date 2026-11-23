@@ -34,6 +34,7 @@ TOKEN_PREFIX = "oap1"
 DEFAULTS: dict = {
     "lease": {"default_ttl": 1800, "max_ttl": 28800},
     "scheduler": {"wip_limit": 16, "research_share": 0.1},
+    "budget": {"default_claim_cost": 1.0},
     "gates": {"impl": [], "merge": []},
     "risk": {"rule": []},
     "domains": {},
@@ -46,6 +47,14 @@ RISK_ORDER = {"T0": 0, "T1": 1, "T2": 2}
 
 class PolicyError(RuntimeError):
     """Configuration or approval problem."""
+
+
+class AdmissionError(PolicyError):
+    """Refused before work starts: WIP limit or budget envelope (exit code 5)."""
+
+    def __init__(self, message: str, detail: dict | None = None) -> None:
+        super().__init__(message)
+        self.detail = detail or {}
 
 
 # --------------------------------------------------------------------------
@@ -72,6 +81,11 @@ class Config:
 
     def wip_limit(self) -> int:
         return int(self.get("scheduler.wip_limit", 16))
+
+    def claim_cost(self) -> float:
+        """Cost charged per claim, in whatever unit the envelope is written in."""
+
+        return float(self.get("budget.default_claim_cost", 1.0))
 
     def gate_commands(self, stage: str) -> list[str]:
         value = self.get(f"gates.{stage}", [])

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .clock import Clock
+from .fslock import advisory_lock
 from .paths import normalize_many
 
 SCHEMA_VERSION = 1
@@ -76,11 +77,31 @@ class TaskLedger:
         self.clock = clock
         self.tasks_dir = self.repo / "ledger" / "tasks"
         self.intents_dir = self.repo / "ledger" / "intents"
+        self.lock_dir = self.repo / ".orchestra" / "locks"
+
+    # -- locking -----------------------------------------------------------
+    def _task_lock(self, task_id: str):
+        """One lock per task file: the unit of read-modify-write serialisation."""
+
+        return advisory_lock(self.lock_dir / f"task-{task_id}.lock")
+
+    def _ledger_lock(self):
+        """Repo-wide lock used only for id allocation (see ADR 0004)."""
+
+        return advisory_lock(self.lock_dir / "ledger.lock")
 
     # -- layout ------------------------------------------------------------
     def ensure_layout(self) -> None:
         self.tasks_dir.mkdir(parents=True, exist_ok=True)
         self.intents_dir.mkdir(parents=True, exist_ok=True)
+
+    def update(self, task_id: str, mutator) -> dict:
+        """Locked read-modify-write. Everything mutating a task goes through here."""
+
+        with self._task_lock(task_id):
+            task = self.load(task_id)
+            mutator(task)
+            return self.save(task)
 
     def task_path(self, task_id: str) -> Path:
         return self.tasks_dir / f"{task_id}.json"
@@ -105,7 +126,13 @@ class TaskLedger:
         os.replace(tmp, path)
         return task
 
-    def create(
+    def create(self, **kwargs) -> dict:
+        """Allocate an id and write the task inside a ledger-wide lock."""
+
+        with self._ledger_lock():
+            return self._create(**kwargs)
+
+    def _create(
         self,
         *,
         title: str,
@@ -184,6 +211,20 @@ class TaskLedger:
         note: str = "",
         extra: dict | None = None,
     ) -> dict:
+        """Public entry point: serialise the read-modify-write on the task file."""
+
+        with self._task_lock(task_id):
+            return self._transition(task_id, to, actor=actor, note=note, extra=extra)
+
+    def _transition(
+        self,
+        task_id: str,
+        to: str,
+        *,
+        actor: str,
+        note: str = "",
+        extra: dict | None = None,
+    ) -> dict:
         task = self.load(task_id)
         previous = task.get("state")
         if to not in STATES:
@@ -215,6 +256,10 @@ class TaskLedger:
         return self.save(task)
 
     def bump_attempt(self, task_id: str, actor: str, note: str = "") -> dict:
+        with self._task_lock(task_id):
+            return self._bump_attempt(task_id, actor, note)
+
+    def _bump_attempt(self, task_id: str, actor: str, note: str = "") -> dict:
         task = self.load(task_id)
         task["attempt"]["used"] = int(task["attempt"]["used"]) + 1
         task["updated_at"] = self.clock.iso()
@@ -230,6 +275,10 @@ class TaskLedger:
         return self.save(task)
 
     def set_lease(self, task_id: str, lease: dict | None) -> dict:
+        with self._task_lock(task_id):
+            return self._set_lease(task_id, lease)
+
+    def _set_lease(self, task_id: str, lease: dict | None) -> dict:
         task = self.load(task_id)
         task["lease"] = lease
         task["updated_at"] = self.clock.iso()

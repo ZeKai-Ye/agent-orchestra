@@ -89,6 +89,14 @@ acquire(task, holder, paths, mode, ttl, token?):
 - **回收**：`expires_at <= now` 的活跃租约标 `expired`，事件落库，任务回到 `proposed`（`blocked` 例外，只清 lease）。
 - **审计**：`lease snapshot` 把活跃租约导出成 `ledger/leases.snapshot.jsonl`，让仓库里能看到"谁当时拿着什么"。
 
+### 3.5 预算封套（准入控制）
+
+`budget` 表按 scope 记账，claim 时用两个 scope：`intent:<id>` 与 `lineage:<name>`。两者在**一个事务内**同时扣费，任一超限则整体拒绝（退出码 `5`），并把已经拿到的租约释放、任务留在 `proposed`。没有登记 `ceiling` 的 scope 视为无限额，只记录花费——所以不加封套的仓库行为与 v0.1 完全一致，只是多了账。
+
+### 3.6 任务文件锁
+
+一任务一文件，每次迁移都是 read-modify-write。所有写入走 `TaskLedger.update(task_id, mutator)`：它持有 `.orchestra/locks/task-<id>.lock` 上的 OS 咨询锁（POSIX `fcntl.flock` / Windows `msvcrt.locking`），id 分配则持一把 `ledger.lock`。锁只在本机有意义，与 SQLite 的单机假设一致（ADR 0004）。锁文件不进 `ledger/`，也不会出现在 `git status` 里。
+
 ## 4. 指纹去重（建议性，不是闸门）
 
 `fingerprint = sha256(canonical({"paths": 排序后的路径, "failure": 失败签名}))`。`claim` 时若已有同指纹的活跃任务，**只警告并记入 history**，不阻塞领取。

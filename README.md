@@ -39,6 +39,16 @@ python -m orchestra.cli --repo D:\work\myrepo task transition --task T-0001 --to
 # worktree + 任务简报（brief.json 里写死了租约路径与必须跑的门）
 python -m orchestra.cli --repo D:\work\myrepo worktree create --task T-0001
 
+# 给一个 intent 立预算封套；超限时 claim 直接退出码 5，不浪费一次 agent 运行
+python -m orchestra.cli --repo D:\work\myrepo budget set --scope intent:I-0001 --ceiling 20
+
+# 指标时间序列：每次快照一行 JSONL，trend 给首末差值
+python -m orchestra.cli --repo D:\work\myrepo status --append
+python -m orchestra.cli --repo D:\work\myrepo trend
+
+# 参考适配器：读 brief、擦掉凭据、跑 agent、取门禁结论
+python tools\agent_adapter.py --repo D:\work\myrepo --task T-0001 --agent-cmd "claude -p {prompt}"
+
 # 机械门：账簿 → 状态 → intent → diff → scope → 风险 → 配置检查 → 债务 → 溯源
 python -m orchestra.cli --repo D:\work\myrepo gate run --task T-0001 --stage impl
 
@@ -48,7 +58,7 @@ python -m orchestra.cli --repo D:\work\myrepo approval issue --kind merge --by k
   --subject sha256:xxxx --prediction "回滚率不升" --rollback "git revert HEAD"
 ```
 
-退出码即契约：`0` 通过、`1` 拒绝、`2` 用法、`3` 租约冲突、`4` 需要人签。
+退出码即契约：`0` 通过、`1` 拒绝、`2` 用法、`3` 租约冲突、`4` 需要人签、`5` 准入拒绝（WIP/预算，带机器可读原因）。
 
 ## 本骨架真正强制的不变量
 
@@ -59,6 +69,8 @@ python -m orchestra.cli --repo D:\work\myrepo approval issue --kind merge --by k
 5. `git diff` 路径必须 ⊆ 租约路径，否则 scope guard 拒绝。
 6. 尝试次数超预算 → `escalated`，不许无限重试。
 7. 租约过期可被回收，任务自动回到 `proposed`（死 agent 不会占着路径）。
+8. 准入拒绝（WIP 或预算）有独立退出码 `5`，且不留下租约、不改任务状态。
+9. 一任务一文件，并发写入经 OS 锁串行化，不丢更新。
 
 ## 目录
 

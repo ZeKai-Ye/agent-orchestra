@@ -65,4 +65,24 @@ git -C $demo -c user.name=verify -c user.email=verify@example.com commit -q -m "
 Orch gate run --task $taskId --stage impl
 if ($LASTEXITCODE -ne 1) { throw 'scope guard must reject an out-of-lease change with exit 1' }
 
-Write-Host '== all green: tests passed, gate passed, scope guard rejected ==' -ForegroundColor Green
+Write-Host '-- admission control: a claim beyond the envelope exits 5 and leaks nothing --' -ForegroundColor Yellow
+Orch budget set --scope intent:I-0001 --ceiling 0.5 | Out-Null
+$secondId = (Orch task new --title 'second task' --paths src/other --intent I-0001 --json | ConvertFrom-Json).id
+Orch task claim --task $secondId --holder agent-2
+if ($LASTEXITCODE -ne 5) { throw "a claim beyond the envelope must exit 5, got $LASTEXITCODE" }
+$leases = (Orch lease list --json | ConvertFrom-Json).leases
+if ($leases | Where-Object { $_.task -eq $secondId }) { throw 'a refused claim must not keep a lease' }
+Write-Host 'refused with exit 5, no lease left behind' -ForegroundColor Green
+
+Write-Host '-- evidence: JSONL snapshots and trend --' -ForegroundColor Yellow
+Orch status --append | Out-Null
+Start-Sleep -Milliseconds 100
+Orch status --append | Out-Null
+Orch trend
+
+Write-Host '-- reference adapter: dry run resolves the brief --' -ForegroundColor Yellow
+Orch worktree create --task $secondId | Out-Null
+& $python (Join-Path $root 'tools\agent_adapter.py') --repo $demo --task $secondId --dry-run
+if ($LASTEXITCODE -ne 0) { throw 'adapter dry run failed' }
+
+Write-Host '== all green: tests, gate, scope guard, admission refusal, metrics, adapter ==' -ForegroundColor Green
