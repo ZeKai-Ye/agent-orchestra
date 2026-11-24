@@ -38,6 +38,7 @@ Legend: `done` shipped and tested, `next` agreed and unblocked, `later` agreed b
 - [x] Mechanical feasibility triage and one-at-a-time promotion
 - [x] `orchestra research --rounds/--budget/--hours` composing accept, triage, promote, work, record
 - [x] `role=research` proposals and `role=critic` verdicts; a refutation blocks the conclusion
+- [x] Critics are paired automatically, with `confirmed`-streak rotation (v0.4.2)
 
 ## Next -> M3 sharded CI and two-level integration
 

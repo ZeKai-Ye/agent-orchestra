@@ -35,6 +35,7 @@ DEFAULTS: dict = {
     "lease": {"default_ttl": 1800, "max_ttl": 28800},
     "scheduler": {"wip_limit": 16, "research_share": 0.1, "per_holder_limit": 2, "cooldown_minutes": 30},
     "budget": {"default_claim_cost": 1.0},
+    "critic": {"pool": ["critic-a", "critic-b"], "max_confirm_streak": 2, "required_sizes": ["S", "M", "L"], "scope": ["reviews"]},
     "gates": {"impl": [], "merge": []},
     "risk": {"rule": []},
     "domains": {},

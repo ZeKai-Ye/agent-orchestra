@@ -17,6 +17,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+from .critic import pair, pair_items
 from .loop import run_loop
 from .roadmap import (
     RoadmapError,
@@ -148,9 +149,24 @@ def run_research(
             task_obj = ctx.ledger.load(worked["task"])
             if task_obj.get("role") == "research":
                 imported = import_proposals(ctx, worked["task"], root=worked.get("worktree"))[0]
+                if imported["created"]:
+                    pair_items(ctx, imported["created"], intent=intent)
                 entry["imported"] = imported
                 log(f"round {number}: imported {len(imported['created'])} proposal(s) from {worked['task']}"
                     + (f", rejected {len(imported['rejected'])}" if imported["rejected"] else ""))
+            item_size = "S"
+            if task_obj.get("roadmap"):
+                try:
+                    item_size = get(load(ctx.repo), task_obj["roadmap"]).get("size", "S")
+                except Exception:  # noqa: BLE001 - a missing item must not stop the round
+                    item_size = "S"
+            entry["critic"] = pair(
+                ctx,
+                target=task_obj["id"],
+                size=item_size,
+                intent=intent,
+                title=f"critic: try to refute {task_obj['id']}",
+            )
         entry["snapshot"] = metrics_snapshot(ctx)
         _record_round(ctx, number, entry)
         summary["rounds"].append(entry)

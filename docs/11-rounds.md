@@ -101,3 +101,32 @@ python -m orchestra.cli --repo . research --rounds 3 --budget 6 --hours 2 `
 - 谁来做 critic：目前由编排者（人或调度脚本）创建 `--role critic --target ...` 的任务。自动为每个 `next` 条目配一个 critic 是下一步（需要先定义"够不够、换不换人"的成本规则）。
 - `confirmed` 只是记录，不等于通过：条目仍需 `roadmap accept`（merged 任务 + 判据）才能 `done`。
 - 反例质量取决于 critic 的能力；机制只保证"反驳一定有证据、一定有后果"。
+## 10. v0.4.2：critic 自动配对与轮换
+
+上一节里 critic 还得靠人创建。现在由引擎自动配：
+
+| 触发 | 规则 |
+| --- | --- |
+| 条目进队列（research 导入或人工 `roadmap add`） | 每个 `S/M/L` 条目配一个 critic（`[critic] required_sizes` 可关掉某个尺寸） |
+| 任务到达 `review` 且带 `roadmap` 或 `role=research` | 为这个任务配一个 critic（target = 任务号） |
+
+**轮换规则**：批判者来自 `[critic] pool`（默认 `critic-a`/`critic-b`）；同一持有者**连续两次 `confirmed`** 后跳过它（`max_confirm_streak = 2`），换下一个；一次 `refuted` 立刻把 streak 归零（说明这个人真的在干活）。池子全饱和时仍会配对，但结果里标 `rotated=true`，也就是"没人可换了，且在硬上"。
+
+状态在 SQLite 的 `critic_stats(holder, confirm_streak, last_verdict, last_at)`，`review --task` 应用判定时更新；`critic status` 可查池子与开着的批判任务。
+
+### 一次真实回合（本仓库，2026-11-24）
+
+| 步骤 | 结果 |
+| --- | --- |
+| `roadmap promote --item R-0005 --intent I-0001` | 建任务 `T-0011`，`R-0005 → next` |
+| `research --rounds 1 --agent-cmd worker` | 门禁全绿 → `review`（1.0s） |
+| 自动配对 | **`T-0012` critic → target `T-0011`，holder `critic-a`** |
+| `critic status` | `critic-a streak=0`、`critic-b streak=0`；open：`T-0009→R-0004`、`T-0012→T-0011` |
+
+也就是说：**结论（T-0011 的 merge）现在默认卡在一个尚未表态的批判者后面**；批判者若 `refuted`，T-0011 直接不能 merge。
+
+### 边界
+
+- 配对数 ≠ 对抗质量：`confirmed` 连续两次就换人只是"防止橡皮章"的下限，不是质量证明。
+- critic 只在 `review` 阶段出现，不会去审未提交的 worktree。
+- 若 `[critic] required_sizes` 把某尺寸关掉，那条目仍可由人工 `critic pair` 补审。

@@ -61,6 +61,13 @@ CREATE TABLE IF NOT EXISTS cooldowns (
     PRIMARY KEY (holder, task_id)
 );
 
+CREATE TABLE IF NOT EXISTS critic_stats (
+    holder       TEXT PRIMARY KEY,
+    confirm_streak INTEGER NOT NULL DEFAULT 0,
+    last_verdict TEXT,
+    last_at      REAL
+);
+
 CREATE TABLE IF NOT EXISTS budget (
     scope   TEXT PRIMARY KEY,
     spent   REAL NOT NULL DEFAULT 0,
@@ -232,6 +239,29 @@ class Store:
     def budget_state(self) -> list[dict]:
         rows = self.conn.execute("SELECT scope, spent, ceiling FROM budget ORDER BY scope").fetchall()
         return [dict(row) for row in rows]
+
+    # -- critic rotation ----------------------------------------------------
+    def critic_streak(self, holder: str) -> int:
+        row = self.conn.execute("SELECT confirm_streak FROM critic_stats WHERE holder = ?", (holder,)).fetchone()
+        return 0 if row is None else int(row["confirm_streak"])
+
+    def critic_last_verdict(self, holder: str) -> str | None:
+        row = self.conn.execute("SELECT last_verdict FROM critic_stats WHERE holder = ?", (holder,)).fetchone()
+        return None if row is None else row["last_verdict"]
+
+    def critic_record(self, holder: str, verdict: str) -> None:
+        """A `confirmed` extends the streak; a `refuted` resets it (that critic did work)."""
+
+        with self.immediate() as conn:
+            row = conn.execute("SELECT confirm_streak FROM critic_stats WHERE holder = ?", (holder,)).fetchone()
+            current = 0 if row is None else int(row["confirm_streak"])
+            streak = current + 1 if verdict == "confirmed" else 0
+            conn.execute(
+                "INSERT INTO critic_stats(holder, confirm_streak, last_verdict, last_at) VALUES (?,?,?,?) "
+                "ON CONFLICT(holder) DO UPDATE SET confirm_streak = ?, last_verdict = ?, last_at = ?",
+                (holder, streak, verdict, self.clock.now(), streak, verdict, self.clock.now()),
+            )
+            self.event("critic.verdict", actor=holder, verdict=verdict, streak=streak)
 
     # -- per-holder admission (loops and fleets) ---------------------------
     def holder_leases(self, holder: str, now: float) -> int:

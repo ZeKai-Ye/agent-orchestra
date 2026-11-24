@@ -1,0 +1,42 @@
+{
+  "attempt": {
+    "max": 2,
+    "used": 0
+  },
+  "created_at": "2026-11-24T06:49:59Z",
+  "dead": [],
+  "deps": [],
+  "domain": "core",
+  "failure_signature": "",
+  "fingerprint": "sha256:10d26abd79eef8136da973cc961b1ada14f34ec34e3180924f9162aa3c7a918b",
+  "history": [
+    {
+      "actor": "cli",
+      "at": "2026-11-24T06:49:59Z",
+      "from": null,
+      "note": "created",
+      "to": "proposed"
+    }
+  ],
+  "id": "T-0012",
+  "intent": "I-0001",
+  "lease": null,
+  "lineage": "critic-a",
+  "owner": "",
+  "paths": [
+    "reviews"
+  ],
+  "revision": 1,
+  "risk": {
+    "class": "T0",
+    "reasons": [],
+    "signals": []
+  },
+  "roadmap": null,
+  "role": "critic",
+  "schema_version": 1,
+  "state": "proposed",
+  "target": "T-0011",
+  "title": "critic: try to refute T-0011",
+  "updated_at": "2026-11-24T06:49:59Z"
+}

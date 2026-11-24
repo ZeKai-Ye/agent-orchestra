@@ -15,6 +15,14 @@ research_share = 0.10
 per_holder_limit = 2
 cooldown_minutes = 30
 
+[critic]
+# Every item that enters the queue gets one adversarial reviewer. A reviewer whose
+# last two verdicts were `confirmed` is rotated out (docs/11 section 10).
+pool = ["critic-a", "critic-b"]
+max_confirm_streak = 2
+required_sizes = ["S", "M", "L"]
+scope = ["reviews"]
+
 [budget]
 # Cost charged to every claim, in whatever unit your envelopes use (agent-hours,
 # dollars, tokens - the number is opaque to the orchestrator).

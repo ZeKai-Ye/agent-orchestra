@@ -1,0 +1,76 @@
+{
+  "attempt": {
+    "max": 3,
+    "used": 0
+  },
+  "created_at": "2026-11-24T06:49:58Z",
+  "dead": [],
+  "deps": [],
+  "domain": "core",
+  "failure_signature": "",
+  "fingerprint": "sha256:100863fa18fdfa588455c3c134a8e13771b573b82f81047a4b1a26ddd186060d",
+  "history": [
+    {
+      "actor": "cli",
+      "at": "2026-11-24T06:49:58Z",
+      "from": null,
+      "note": "created",
+      "to": "proposed"
+    },
+    {
+      "actor": "research",
+      "at": "2026-11-24T06:49:58Z",
+      "from": "proposed",
+      "note": "claimed",
+      "to": "claimed"
+    },
+    {
+      "actor": "research",
+      "at": "2026-11-24T06:49:58Z",
+      "from": "claimed",
+      "note": "agent started",
+      "to": "in_progress"
+    },
+    {
+      "actor": "research",
+      "at": "2026-11-24T06:49:59Z",
+      "from": "in_progress",
+      "note": "gate passed",
+      "to": "review"
+    }
+  ],
+  "id": "T-0011",
+  "intent": "I-0001",
+  "lease": {
+    "expires_at": 1795504798,
+    "group": "L-86132391e169",
+    "holder": "research",
+    "mode": "write",
+    "paths": [
+      "README.md"
+    ],
+    "task": "T-0011",
+    "ttl": 1800
+  },
+  "lineage": "roadmap",
+  "owner": "",
+  "paths": [
+    "README.md"
+  ],
+  "revision": 5,
+  "risk": {
+    "blast_radius": 1,
+    "changed_files": 1,
+    "class": "T0",
+    "digest": "sha256:5b3589e06be7e1bd32df91147c8a1a767977c3a7b8388a19950afb3c8efa111d",
+    "reasons": [],
+    "signals": []
+  },
+  "roadmap": "R-0005",
+  "role": "patch",
+  "schema_version": 1,
+  "state": "review",
+  "target": null,
+  "title": "R-0005: Record the critic auto-pairing demo in README",
+  "updated_at": "2026-11-24T06:49:59Z"
+}

@@ -16,6 +16,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from .critic import record as critic_record
 from .ledger import LedgerError
 
 STATUSES = ("later", "next", "done", "dropped")
@@ -383,4 +384,12 @@ def apply_verdict(ctx, task_id: str, root: Path | None = None) -> dict:
         ctx.ledger.set_verdict(target, verdict, by=task_id, reason=block["reason"])
         result["applied"] = ctx.ledger.load(target)
     ctx.store.event("review.applied", task_id=task_id, actor="critic", target=target, verdict=verdict)
+    critic_record(ctx, ctx.ledger.load(task_id).get("lineage"), verdict)
+    task = ctx.ledger.load(task_id)
+    lease = task.get("lease") or {}
+    if lease.get("group"):
+        ctx.leases.release(lease["group"])
+    if task["state"] == "review":
+        ctx.ledger.transition(task_id, "approved", actor="critic", note=f"verdict {verdict} applied")
+        ctx.ledger.transition(task_id, "merged", actor="critic", note=f"verdict {verdict} recorded")
     return result

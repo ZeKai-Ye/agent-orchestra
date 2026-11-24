@@ -15,6 +15,7 @@ from pathlib import Path
 
 from . import __version__
 from .clock import clock_from_env
+from .critic import pair as pair_critic, status as critic_status
 from .gates import GateError, changed_files, diff_text, git, resolve_base, run_gate
 from .leases import LeaseConflict, LeaseError, LeaseManager
 from .ledger import DEAD_REASONS, LedgerError, StateError, TaskLedger
@@ -633,6 +634,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--role", default="patch")
     p.set_defaults(handler=cmd_roadmap_promote)
 
+    critic = add("critic", lambda ctx: USAGE, "adversarial reviewers")
+    critic_sub = critic.add_subparsers(dest="sub", required=True)
+
+    p = critic_sub.add_parser("pair", help="create one critic task for a task or item")
+    p.add_argument("--target", required=True, help="T-0000 or R-0000")
+    p.add_argument("--size", default="S", choices=["S", "M", "L"])
+    p.add_argument("--intent", default=None)
+    p.add_argument("--title", default=None)
+    p.set_defaults(handler=cmd_critic_pair)
+
+    p = critic_sub.add_parser("status", help="pool, confirm streaks and open critic tasks")
+    p.set_defaults(handler=cmd_critic_status)
+
     review = add("review", cmd_review, "apply a critic task's verdict (a refutation blocks a conclusion)")
     review.add_argument("--task", required=True)
     review.add_argument("--from", dest="source", default=None)
@@ -935,6 +949,24 @@ def cmd_review(ctx: Ctx) -> int:
     if isinstance(applied, dict) and "status" in applied:
         text += f" -> {applied['status']}"
     _print(args, result, text)
+    return OK
+
+
+def cmd_critic_pair(ctx: Ctx) -> int:
+    args = ctx.args
+    result = pair_critic(ctx, target=args.target, size=args.size, intent=args.intent, title=args.title)
+    if result.get("paired"):
+        _print(args, result, f"critic {result['task']['id']} -> {args.target} ({result['holder']})")
+        return OK
+    _print(args, result, f"no critic paired: {result.get('reason')}")
+    return FAIL
+
+
+def cmd_critic_status(ctx: Ctx) -> int:
+    payload = critic_status(ctx)
+    rows = [f"{row['holder']}\tstreak={row['confirm_streak']}\tlast={row['last_verdict']}" for row in payload["pool"]]
+    rows += [f"open\t{entry['task']}\t{entry['target']}\t{entry['state']}" for entry in payload["open_critics"]]
+    _print(ctx.args, payload, "\n".join(rows) or "(no critics)")
     return OK
 
 if __name__ == "__main__":  # pragma: no cover

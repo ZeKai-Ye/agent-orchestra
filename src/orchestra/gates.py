@@ -16,6 +16,7 @@ from .policy import ApprovalError, classify, verify
 from .policy import ApprovalError, classify, read_key, verify
 from .roadmap import parse_proposals, parse_verdict
 IGNORED_PREFIXES = ("ledger/", ".orchestra/", "")
+IGNORED_FILES = ("roadmap/items.jsonl", "roadmap/STATE.md")
 
 
 class GateError(RuntimeError):
@@ -51,6 +52,8 @@ def resolve_base(repo: Path, base: str | None = None) -> str:
 
 
 def _ignored(path: str) -> bool:
+    if path in IGNORED_FILES:
+        return True
     return any(path.startswith(prefix) for prefix in IGNORED_PREFIXES if prefix)
 
 

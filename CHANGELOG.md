@@ -7,6 +7,22 @@ versioning: [SemVer](https://semver.org/).
 
 Nothing yet.
 
+## [0.4.2] - 2026-11-24
+
+### Added
+
+- Automatic critic pairing: every imported `S/M/L` item and every task that reaches `review` with a
+  roadmap item (or `role=research`) gets one adversarial task.
+- Reviewer rotation: `[critic] pool` / `max_confirm_streak`; a holder with two consecutive
+  `confirmed` verdicts is skipped, a `refuted` resets its streak. Saturated pools still pair and flag
+  `rotated=true`.
+- `orchestra critic pair|status`; streaks live in the `critic_stats` table and update on
+  `review --task`.
+- `review --task` now closes the critic task (release lease, `review -> approved -> merged`), so two
+  critics on the same `reviews` scope no longer collide.
+- Gate ignores engine-owned roadmap state (`roadmap/items.jsonl`, `roadmap/STATE.md`) when computing
+  the change under review; proposals stay in scope.
+- 96 tests (was 89), including rotation, saturation and auto-pairing in a research round.
 ## [0.4.1] - 2026-11-24
 
 ### Added

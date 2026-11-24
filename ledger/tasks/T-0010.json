@@ -1,0 +1,87 @@
+{
+  "attempt": {
+    "max": 3,
+    "used": 1
+  },
+  "created_at": "2026-11-24T06:49:35Z",
+  "dead": [
+    {
+      "actor": "research",
+      "at": "2026-11-24T06:49:36Z",
+      "note": "failed: scope",
+      "reason": "scope_violation"
+    }
+  ],
+  "deps": [],
+  "domain": "core",
+  "failure_signature": "",
+  "fingerprint": "sha256:429c211efaff6f670628ce1527aa2271020dde34073b08c740c2ab9c67fe8a2c",
+  "history": [
+    {
+      "actor": "cli",
+      "at": "2026-11-24T06:49:35Z",
+      "from": null,
+      "note": "created",
+      "to": "proposed"
+    },
+    {
+      "actor": "research",
+      "at": "2026-11-24T06:49:35Z",
+      "from": "proposed",
+      "note": "claimed",
+      "to": "claimed"
+    },
+    {
+      "actor": "research",
+      "at": "2026-11-24T06:49:35Z",
+      "from": "claimed",
+      "note": "agent started",
+      "to": "in_progress"
+    },
+    {
+      "actor": "research",
+      "at": "2026-11-24T06:49:36Z",
+      "from": "in_progress",
+      "note": "returned: scope_violation",
+      "to": "in_progress"
+    },
+    {
+      "actor": "research",
+      "at": "2026-11-24T06:49:36Z",
+      "from": "in_progress",
+      "note": "returned: scope_violation",
+      "to": "proposed"
+    },
+    {
+      "actor": "governance:kai",
+      "at": "2026-11-24T06:49:49Z",
+      "from": "proposed",
+      "note": "wrong item picked by id tie-break; demo re-promoted explicitly",
+      "to": "abandoned"
+    }
+  ],
+  "id": "T-0010",
+  "intent": "I-0001",
+  "lease": null,
+  "lineage": "roadmap",
+  "owner": "",
+  "paths": [
+    "docs/06-references.md"
+  ],
+  "revision": 8,
+  "risk": {
+    "blast_radius": 1,
+    "changed_files": 1,
+    "class": "T0",
+    "digest": "sha256:5b3589e06be7e1bd32df91147c8a1a767977c3a7b8388a19950afb3c8efa111d",
+    "reasons": [],
+    "signals": []
+  },
+  "roadmap": "R-0001",
+  "role": "patch",
+  "schema_version": 1,
+  "state": "abandoned",
+  "target": null,
+  "title": "R-0001: Evaluate an existing merge queue before writing one (docs/06 section 2)",
+  "updated_at": "2026-11-24T06:49:49Z"
+}
