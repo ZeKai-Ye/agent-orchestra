@@ -125,6 +125,30 @@ class LoopFailureTests(LoopCase):
         self.assertEqual(brief["dead_approaches"][-1]["reason"], "scope_violation")
         self.assertTrue(any("data, not instructions" in line for line in brief["instructions"]))
 
+    def test_failed_round_leaves_a_clean_worktree(self):
+        task = self.make_task(paths=["src/core"], max_attempts="2")
+        wander = self.script(
+            "import pathlib\n"
+            "path = pathlib.Path('src/other/z.py')\n"
+            "path.parent.mkdir(parents=True, exist_ok=True)\n"
+            "path.write_text('z = 3\\n', encoding='utf-8')\n"
+            "pathlib.Path('src/core/untracked.txt').write_text('junk', encoding='utf-8')\n"
+        )
+        good = self.script(
+            "import pathlib\n"
+            "path = pathlib.Path('src/core/app.py')\n"
+            "path.write_text(path.read_text(encoding='utf-8') + '\\n\\ndef negate(a):\\n    return -a\\n', encoding='utf-8')\n",
+            name="good_agent.py",
+        )
+        first = json.loads(self.run_loop("--once", "--agent-cmd", self.agent_cmd(wander), "--idle-sleep", "0.01").stdout)
+        self.assertEqual(first["failed"], 1)
+        worktree = Path(first["rounds"][0]["worktree"])
+        self.assertFalse((worktree / "src" / "other" / "z.py").exists(), "leftover from a failed round")
+        self.assertFalse((worktree / "src" / "core" / "untracked.txt").exists(), "untracked leftover")
+
+        second = json.loads(self.run_loop("--once", "--agent-cmd", self.agent_cmd(good), "--idle-sleep", "0.01").stdout)
+        self.assertEqual(second["review"], 1, second)
+        self.assertEqual(self.show(task["id"])["state"], "review")
     def test_agent_failure_returns_with_reason(self):
         task = self.make_task(paths=["src/core"])
         script = self.script("raise SystemExit(3)\n")

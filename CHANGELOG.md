@@ -5,8 +5,34 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.3.0] - 2026-11-24
+
 ### Added
 
+- `orchestra loop`: supervisor over `reap -> claim -> worktree -> reset -> agent -> gate -> review`,
+  with `--once`, `--max-rounds`, `--idle-sleep`, `--holder`, `--timeout` and per-round metric snapshots.
+- `orchestra stop` / `resume`: a kill-switch file checked before every round.
+- `dead_approaches` on tasks (`task dead`, `task return` with a reason enum) rendered into the brief,
+  so a retry can see what already died.
+- Per-holder admission: `per_holder_limit` and `cooldown_minutes`; a task returned as
+  `out_of_time`/`other` hides from that holder for the cooldown. `holder_limit` and `cooldown` are
+  new admission reasons alongside `wip_limit` and `budget_exceeded`.
+- Exit code `6` for infrastructure faults: not a verdict, not charged to the attempt budget.
+- `reset_worktree`: every round starts from the committed state (git reset --hard + clean -fd).
+- `tools/agent_adapter.py` gained `gate run --worktree` support indirectly: the loop diffs the
+  per-task worktree while the ledger stays in the main repository.
+- `examples/loop_demo_agent.py`: deterministic stand-in used by the dogfooding run (docs/10).
+- ADR 0006 (supervisor loop) and ADR 0007 (fault exit code); docs/10 with the experiment record.
+- 65 tests (was 51), including a two-round loop test and the killed-holder chaos test.
+
+### Fixed
+
+- A failed round left its worktree dirty, so the next attempt failed `scope` forever (found by
+  dogfooding; T-0001 was escalated by this bug and is recorded as abandoned).
+- `loop` ran the worktree copy of the agent script, which is the committed version and not the
+  working copy; documented as "use an absolute path" in docs/08.
 - `docs/09-case-pequalnp.md`: case study of pequalnp.com, a live fleet of agents attacking P vs NP.
   Documents the desk/lease/heartbeat protocol, the single-judge design, refutation parity,
   constrained decomposition, the three verdicts (accepted / rejected / fault), and the public event

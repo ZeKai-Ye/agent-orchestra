@@ -14,7 +14,15 @@ from .gates import run_gate
 from .leases import LeaseConflict
 from .ledger import LedgerError
 from .policy import AdmissionError
-from .runner import append_snapshot, claim_task, create_worktree, metrics_snapshot, return_task, run_agent
+from .runner import (
+    append_snapshot,
+    claim_task,
+    create_worktree,
+    metrics_snapshot,
+    reset_worktree,
+    return_task,
+    run_agent,
+)
 
 STOP_DEFAULT = Path(".orchestra") / "STOP"
 
@@ -129,6 +137,7 @@ def run_loop(
         record["lease"] = claim["lease"]["group"]
         ctx.ledger.transition(task["id"], "in_progress", actor=holder, note="agent started")
         prepared = create_worktree(ctx, task)
+        reset_worktree(Path(prepared["worktree"]))
         record["worktree"] = prepared["worktree"]
 
         if agent_command is None:
@@ -149,6 +158,7 @@ def run_loop(
         if run["timed_out"] or run["exit"] != 0:
             reason = "out_of_time" if run["timed_out"] else "other"
             state = return_task(ctx, task["id"], holder, reason, note=f"agent exit {run['exit']}")
+            reset_worktree(Path(prepared["worktree"]))
             record["outcome"] = "returned"
             record["returned_reason"] = reason
             record["state"] = state["state"]
@@ -181,6 +191,7 @@ def run_loop(
         else:
             reason = "scope_violation" if "scope" in failed else "gate_failed"
             state = return_task(ctx, task["id"], holder, reason, note="failed: " + ", ".join(failed))
+            reset_worktree(Path(prepared["worktree"]))
             record["outcome"] = "returned"
             record["returned_reason"] = reason
             record["state"] = state["state"]

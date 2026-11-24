@@ -75,6 +75,34 @@ python -m unittest tests.test_core.LeaseTests.test_eight_agents_race_for_one_pat
 python -m unittest tests.test_gates -v
 ```
 
+## 8. v0.3.0 增补（M2.5：supervisor loop + 死路清单 + 冷却 + 故障第三态）
+
+### 8.1 新增能力
+
+| 能力 | 位置 | 证据 | 限制 |
+| --- | --- | --- | --- |
+| `orchestra loop`：每轮 reap→claim→reset→agent→gate→review | `loop.py`、`runner.py` | `tests/test_loop.py` 14 例 | 停在 review，不合并 |
+| kill switch（`stop`/`resume`，文件标记） | `cli.cmd_stop/resume` | `test_stop_file_prevents_any_round` | 只在本轮边界生效 |
+| 死路清单随 brief 下发 | `ledger.add_dead`、`runner.create_worktree` | `test_brief_carries_dead_approaches` | 上限 20 条，不做语义合并 |
+| 每持有者上限 + 冷却 | `runner.claim_task`、`store.cooldowns` | `test_per_holder_limit_*`、`test_cooldown_*` | 冷却只按 (holder, task) 记 |
+| 失败不污染下一轮 | `runner.reset_worktree` | `test_failed_round_leaves_a_clean_worktree` | 会丢弃 agent 的未提交产物（有意） |
+| 退出码 6：基础设施故障 | `cli.main`、`runner.run_agent` | `test_missing_agent_binary_is_a_fault_not_a_verdict`、`test_missing_worktree_is_a_fault` | 租约留在原地，靠 TTL 回收 |
+
+### 8.2 本轮踩到并修掉的（含真跑暴露的）
+
+10. **失败轮次污染下一轮**（实测发现，严重）：越界改动留在 worktree，下一轮 scope 永远失败 → 被误 escalate。加 `reset_worktree`（每轮开始 + 失败后）。T-0001 就是被这个 bug 送进 `escalated` 的，账簿里如实留档，后改为 `abandoned`。
+11. **循环跑的是 worktree 里的旧版 agent 脚本**：我改了 stub 但没提交，worktree 检出的是 main 上的旧版 → diff 为空。改用绝对路径调用受控副本，并写进 docs/08。
+12. **`budget_exceeded` 静默停住循环**：`intent:I-0001` 到 10/10 后连续 3 次 `admission_refused`。这是"工作正常"，但意味着跑长循环前必须先配封套——已写进 docs/10 §4。
+
+### 8.3 一次真跑（dogfooding）的数据
+
+`T-0007`：第 1 轮越界 → scope 失败（1.06s）；第 2 轮读 dead 后改对范围 → review（0.62s）；提交带 `Task-Id`；merge 门在 worktree 里跑全量测试 49.3s 全绿；`approved → merged` + `git merge --ff-only`。全文见 [10-loop.md](10-loop.md)。
+
+### 8.4 边界
+
+- 循环不做合并、不做优先级、不做跨机；worker 内部多轮自我修复不在控制面。
+- `escalated` 只能由治理层重置，循环不会自己捡回来。
+
 ## 7. v0.2.0 增补（M2：准入、韧性、证据、适配器）
 
 ### 7.1 新增能力

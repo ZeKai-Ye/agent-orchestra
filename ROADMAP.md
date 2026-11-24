@@ -16,48 +16,32 @@ Legend: `done` shipped and tested, `next` agreed and unblocked, `later` agreed b
 
 ## Done -> M2 admission, resilience, evidence (v0.2.0)
 
-- [x] Budget pre-charge on `task claim`: `intent:<id>` and `lineage:<name>` envelopes, all-or-nothing,
-      refusal exits `5` with a machine-readable reason and leaves no lease behind (ADR 0005)
-- [x] `budget set` / `budget list` to register envelopes; `--cost` overrides the configured charge
-- [x] Per-task file locks (`fslock`): six concurrent `task attempt` calls now land all six updates
-      (ADR 0004), plus a ledger-wide lock for id allocation
-- [x] Chaos test: an agent is SIGKILLed mid-task, the path stays blocked until the TTL, then
-      `lease reap` returns the task to `proposed` and a second agent can claim it
-- [x] `status --append` writes a JSONL snapshot; `trend` reports first/last deltas
-- [x] `gate run --worktree`: diff a per-task worktree while the ledger stays in the main repo
-- [x] `tools/agent_adapter.py`: reference adapter (brief-driven subprocess, credential scrubbing,
-      gate verdict), proven end to end with a fake agent
-- [x] 51 tests (was 37)
+- [x] Budget pre-charge on `task claim` (exit `5` with a machine-readable reason, lease released)
+- [x] Per-task file locks, so concurrent writers cannot lose an update
+- [x] Chaos test: a killed holder is reaped after its TTL and the task requeues
+- [x] `status --append` JSONL snapshots and `trend`
+- [x] `gate run --worktree` and `tools/agent_adapter.py`
 
-Acceptance met: a killed agent never blocks a path beyond its TTL, and every claim either fits the
-envelope or is refused with a reason (both asserted in `tests/test_resilience.py` and
-`tests/test_admission.py`).
+## Done -> M2.5 supervisor loop (v0.3.0)
+
+- [x] `orchestra loop`: reap, claim, worktree, reset, agent, gate, review, snapshot
+- [x] `orchestra stop` / `resume`: kill switch honoured before every round
+- [x] `dead_approaches` on the task, rendered into the brief (adopted from docs/09)
+- [x] Per-holder cap and cooldown; `holder_limit` / `cooldown` admission reasons
+- [x] Exit code `6` for infrastructure faults, never charged to the attempt budget
+- [x] Dogfooding run on this repository: one scope rejection, one clean pass, merged (docs/10)
 
 ## Next -> M3 sharded CI and two-level integration
 
-- [ ] Evaluate `funador/claude-code-merge-queue` and `uber/submitqueue` as the merge queue before
-      writing one (see `docs/06` section 2); record the comparison as an ADR either way
-- [ ] `affected` computation from the dependency graph, with a **graph self-check**: an incremental
-      build can silently skip tests (`docs/06` item 6), so the shard map needs its own validation
+- [ ] Evaluate `funador/claude-code-merge-queue` and `uber/submitqueue` before writing a merge queue
+      (docs/06 section 2); record the comparison as an ADR either way
+- [ ] `affected` computation from the dependency graph, with a graph self-check: an incremental
+      build can silently skip tests (docs/06 item 6)
 - [ ] Module integration branches merged into trunk in batches; speculative verification of a batch
 - [ ] Metrics: verification duration and failure rate per shard, conflict count per batch size
-- [ ] One adapter against a real CLI agent (replacing the fake agent in the test)
+- [ ] Loop: priority ordering (a `--priority-domain` flag) once there is more than one queue
+- [ ] Loop: `merge` automation behind a signed token (today the loop stops at `review`)
 
-## Backlog -> adopted from the pequalnp case study (docs/09)
-
-A live fleet of dozens of agents attacking one open problem exposed a coordination protocol that is
-close enough to ours to learn from directly. These items are cheap and orthogonal to M3, so they can
-land in any order:
-
-1. `dead_approaches` on the task, rendered into the brief: what was already tried and why it died.
-   Highest value per line of code: it removes the most common wasted agent run.
-2. Per-holder concurrency cap plus a cooldown after returning a task as `out_of_time` / `other`.
-3. Exit code `6` for infrastructure faults: not a verdict, and not charged to the attempt budget.
-4. `refute` role: a failing test that disproves a claimed fix is a valid deliverable.
-5. Constrained decomposition: one proposal splits a parent into 2-4 child tasks with disjoint paths,
-   all inside the parent lease; the parent closes only after the children merge.
-6. `needs_human` gate level: soft violations queue for a person instead of failing outright.
-7. `events --format md|atom --out`: publish the record (state changes plus the graveyard of dead ends).
 ## Later -> M4..M7
 
 | Milestone | Content | Blocked on |
@@ -67,11 +51,19 @@ land in any order:
 | M6 debt ratchet + refactor licence | ratio metrics, earned headroom, sampled mutation score, competing refactor proposals | M5 |
 | M7 research arm + reverse gates | RFC flow, isolated namespace, auto-revert, lineage freeze | M6 |
 
+## Backlog -> still open from the pequalnp case (docs/09)
+
+4. `refute` role: a failing test that disproves a claimed fix is a valid deliverable.
+5. Constrained decomposition: one proposal splits a parent into 2-4 child tasks with disjoint paths,
+   all inside the parent lease; the parent closes only after the children merge.
+6. `needs_human` gate level: soft violations queue for a person instead of failing outright.
+7. `events --format md|atom --out`: publish the record (state changes plus the graveyard of dead ends).
+
 ## Not doing
 
 - A capability-scoring engine used for authorisation. Risk radius decides permissions, not identity.
 - Free-form multi-agent chat as shared memory. The repository is the only shared medium.
 - Direct commits to trunk. Every merge goes through the gate and carries `Task-Id`.
 - Automating irreversible actions. They require a human-signed token, always.
-- Re-implementing the agent loop, sandbox, or model routing. Those are somebody else'\''s product
+- Re-implementing the agent loop, sandbox, or model routing. Those are somebody else's product
   (`docs/06` section 8).

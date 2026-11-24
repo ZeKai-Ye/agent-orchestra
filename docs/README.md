@@ -13,6 +13,7 @@ Read in this order. Each file answers one question, and no file tries to answer 
 | [07-implementation-log.md](07-implementation-log.md) | What is actually implemented, tried, and abandoned? | **factual log, update on every merge** |
 | [08-development-guide.md](08-development-guide.md) | How do I add a gate / lease mode / adapter without breaking the design? | process |
 | [09-case-pequalnp.md](09-case-pequalnp.md) | How does a live 50-agent fleet actually coordinate? What do we adopt? | evidence, dated 2026-11-24 |
+| [10-loop.md](10-loop.md) | How does the supervisor loop keep an agent working without losing control? What did the dogfooding run show? | design + experiment, 2026-11-24 |
 
 ## Rules
 

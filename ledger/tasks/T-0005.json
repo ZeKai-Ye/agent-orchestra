@@ -1,0 +1,78 @@
+{
+  "attempt": {
+    "max": 3,
+    "used": 0
+  },
+  "created_at": "2026-11-24T05:50:09Z",
+  "dead": [
+    {
+      "actor": "cli",
+      "at": "2026-11-24T05:50:10Z",
+      "note": "seed",
+      "reason": "other"
+    }
+  ],
+  "deps": [],
+  "domain": "core",
+  "failure_signature": "",
+  "fingerprint": "sha256:b827c6c1c559f8bdc8e2df001612f7b4642a32e48cc77a7da097b09da6aabb70",
+  "history": [
+    {
+      "actor": "cli",
+      "at": "2026-11-24T05:50:09Z",
+      "from": null,
+      "note": "created",
+      "to": "proposed"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T05:50:28Z",
+      "from": "proposed",
+      "note": "claimed; duplicate-suspects=T-0006",
+      "to": "claimed"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T05:50:28Z",
+      "from": "claimed",
+      "note": "agent started",
+      "to": "in_progress"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T05:50:28Z",
+      "from": "in_progress",
+      "note": "gate passed",
+      "to": "review"
+    },
+    {
+      "actor": "governance:kai",
+      "at": "2026-11-24T05:50:42Z",
+      "from": "review",
+      "note": "probe task; the clean run is T-0007",
+      "to": "abandoned"
+    }
+  ],
+  "id": "T-0005",
+  "intent": "I-0001",
+  "lease": null,
+  "lineage": "local",
+  "owner": "",
+  "paths": [
+    "docs/07-implementation-log.md"
+  ],
+  "revision": 7,
+  "risk": {
+    "blast_radius": 1,
+    "changed_files": 1,
+    "class": "T0",
+    "digest": "sha256:0fd72b633f863c7ef7921b6cc4d80762f6e0ef912cf04e10e5a4d77bd5658e04",
+    "reasons": [],
+    "signals": []
+  },
+  "role": "patch",
+  "schema_version": 1,
+  "state": "abandoned",
+  "title": "probe3: instrument the agent inside the loop",
+  "updated_at": "2026-11-24T05:50:42Z"
+}

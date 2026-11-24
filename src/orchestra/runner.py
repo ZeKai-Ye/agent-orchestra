@@ -161,6 +161,18 @@ def claim_task(ctx, task: dict, holder: str, *, mode: str = "write", ttl: int | 
     return {"task": task["id"], "lease": lease, "cost": charge, "budget_charged": charged, "duplicates": duplicates}
 
 
+def reset_worktree(worktree: Path) -> None:
+    """Discard whatever a previous attempt left behind.
+
+    A failed round must not poison the next one: the loop reuses the same worktree, so
+    leftovers from an out-of-lease attempt would fail the scope gate forever. One round
+    starts from the committed state, always.
+    """
+
+    git(worktree, "reset", "--hard", "HEAD")
+    git(worktree, "clean", "-fdq")
+
+
 def create_worktree(ctx, task: dict) -> dict:
     """One worktree and one brief per task; re-running reuses what exists."""
 

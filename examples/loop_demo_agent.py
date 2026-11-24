@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 README_BLOCK = """
@@ -56,6 +57,17 @@ def main() -> int:
         return 0
 
     reasons = ", ".join(entry.get("reason", "?") for entry in dead)
+    override = os.environ.get("LOOP_DEMO_TARGET")
+    if override:
+        target = Path(override)
+        target.write_text(
+            target.read_text(encoding="utf-8")
+            + f"\n<!-- loop attempt {len(dead) + 1}: inside the lease after dead={reasons} -->\n",
+            encoding="utf-8",
+        )
+        print(f"attempt {len(dead) + 1}: read dead_approaches ({reasons}) and edited {target} inside the lease")
+        return 0
+
     readme = Path("README.md")
     original = readme.read_text(encoding="utf-8")
     if "循环开发（orchestra loop）" not in original:

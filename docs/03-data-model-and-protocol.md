@@ -97,6 +97,16 @@ acquire(task, holder, paths, mode, ttl, token?):
 
 一任务一文件，每次迁移都是 read-modify-write。所有写入走 `TaskLedger.update(task_id, mutator)`：它持有 `.orchestra/locks/task-<id>.lock` 上的 OS 咨询锁（POSIX `fcntl.flock` / Windows `msvcrt.locking`），id 分配则持一把 `ledger.lock`。锁只在本机有意义，与 SQLite 的单机假设一致（ADR 0004）。锁文件不进 `ledger/`，也不会出现在 `git status` 里。
 
+### 3.7 死路清单（`dead`）
+
+任务的 `dead` 是一个有上限（20 条）的追加数组：`{at, reason, note, actor}`。写入途径只有两个：`task dead`（手工记录）与 `task return`（循环交回任务时自动记录）。`reason` 是枚举（`gate_failed` / `scope_violation` / `agent_failed` / `no_progress` / `missing_lemma` / `out_of_time` / `blocked_externally` / `submitted` / `reduced` / `other`），乱填会被拒。
+
+它不是日志，是**给下一个领取者的输入**：`worktree create` 与循环都会把它写进 `brief.json` 的 `dead_approaches`。docs/10 的实测里，正是这条让第二轮改对了范围。
+
+### 3.8 冷却（`cooldowns` 表）
+
+`(holder, task_id) → until`。以 `out_of_time` / `other` 交回任务时写入，时长由 `[scheduler] cooldown_minutes` 决定。领取时命中冷却 → 退出码 `5`，`reason=cooldown`，其它持有者不受影响。这个表在 SQLite 而不是任务文件里，因为它是"谁暂时别碰哪个任务"的瞬时状态，且会被频繁改写。
+
 ## 4. 指纹去重（建议性，不是闸门）
 
 `fingerprint = sha256(canonical({"paths": 排序后的路径, "failure": 失败签名}))`。`claim` 时若已有同指纹的活跃任务，**只警告并记入 history**，不阻塞领取。

@@ -1,0 +1,146 @@
+{
+  "attempt": {
+    "max": 2,
+    "used": 2
+  },
+  "created_at": "2026-11-24T05:48:55Z",
+  "dead": [
+    {
+      "actor": "loop",
+      "at": "2026-11-24T05:48:56Z",
+      "note": "failed: scope",
+      "reason": "scope_violation"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T05:48:57Z",
+      "note": "failed: diff",
+      "reason": "gate_failed"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T05:49:29Z",
+      "note": "failed: attempt-budget, diff",
+      "reason": "gate_failed"
+    }
+  ],
+  "deps": [],
+  "domain": "core",
+  "failure_signature": "",
+  "fingerprint": "sha256:b827c6c1c559f8bdc8e2df001612f7b4642a32e48cc77a7da097b09da6aabb70",
+  "history": [
+    {
+      "actor": "cli",
+      "at": "2026-11-24T05:48:55Z",
+      "from": null,
+      "note": "created",
+      "to": "proposed"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T05:48:55Z",
+      "from": "proposed",
+      "note": "claimed",
+      "to": "claimed"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T05:48:55Z",
+      "from": "claimed",
+      "note": "agent started",
+      "to": "in_progress"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T05:48:56Z",
+      "from": "in_progress",
+      "note": "returned: scope_violation",
+      "to": "in_progress"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T05:48:56Z",
+      "from": "in_progress",
+      "note": "returned: scope_violation",
+      "to": "proposed"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T05:48:56Z",
+      "from": "proposed",
+      "note": "claimed",
+      "to": "claimed"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T05:48:56Z",
+      "from": "claimed",
+      "note": "agent started",
+      "to": "in_progress"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T05:48:57Z",
+      "from": "in_progress",
+      "note": "returned: gate_failed",
+      "to": "in_progress"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T05:48:57Z",
+      "from": "in_progress",
+      "note": "escalated: gate_failed (attempt budget exhausted)",
+      "to": "escalated"
+    },
+    {
+      "actor": "governance:kai",
+      "at": "2026-11-24T05:49:28Z",
+      "from": "escalated",
+      "note": "re-run after env probe",
+      "to": "proposed"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T05:49:28Z",
+      "from": "proposed",
+      "note": "claimed",
+      "to": "claimed"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T05:49:28Z",
+      "from": "claimed",
+      "note": "agent started",
+      "to": "in_progress"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T05:49:29Z",
+      "from": "in_progress",
+      "note": "escalated: gate_failed (attempt budget exhausted)",
+      "to": "escalated"
+    }
+  ],
+  "id": "T-0002",
+  "intent": "I-0001",
+  "lease": null,
+  "lineage": "loop-demo",
+  "owner": "",
+  "paths": [
+    "docs/07-implementation-log.md"
+  ],
+  "revision": 19,
+  "risk": {
+    "blast_radius": 0,
+    "changed_files": 0,
+    "class": "T0",
+    "digest": "sha256:63331a155f3d0bf1e79ebbeb7d40ef035f799d4af8d1e6e5cc06412e12215eea",
+    "reasons": [],
+    "signals": []
+  },
+  "role": "patch",
+  "schema_version": 1,
+  "state": "escalated",
+  "title": "log: record the v0.3.0 loop experiment in docs/07",
+  "updated_at": "2026-11-24T05:49:29Z"
+}

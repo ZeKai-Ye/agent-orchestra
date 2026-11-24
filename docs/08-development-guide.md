@@ -25,8 +25,11 @@ src/orchestra/          控制面本体（stdlib only，禁止引入第三方依
   gates.py              门禁编排；所有 git 访问都在这里
   store.py              SQLite schema 与事务原语（只被 leases/policy/gates 调用）
   fslock.py             OS 咨询锁；任务文件的临界区靠它串行化
+  runner.py             轮次原语：claim（准入）、worktree/brief、跑 agent、return/escalate
+  loop.py               supervisor：决定下一轮做什么，管重试与退避
   paths.py / clock.py   纯函数；不 import 其它模块
 tools/agent_adapter.py  参考适配器（不属于包；只走 CLI 契约）
+examples/loop_demo_agent.py  循环实验用的确定性替身（不是模型）
 tests/                  一不变量一用例；用临时仓库，不 mock git
 docs/                   方案与事实
 adr/                    决策记录
@@ -65,6 +68,11 @@ scripts/verify.ps1      唯一入口，CI 也跑它
 ### 3.4 改 schema
 
 `ledger.SCHEMA_VERSION` 加 1，`validate` 里对旧版本给出可执行错误信息，写迁移函数并在 `task show` 时惰性升级。任何 schema 变更都需要 ADR——这是少数值得走流程的地方。
+
+### 3.5 写循环/适配器时的两条硬规矩
+
+- **agent 入口用绝对路径**。worktree 检出的是 main 上的版本，你本地未提交的 agent 脚本不会跟进去（v0.3.0 实测踩过：循环跑的是旧脚本，diff 一直为空）。
+- **不要在 agent 里自己重试整个任务**。重试、退避、冷却、升级都由 `loop` 的尝试预算管；agent 只负责这一轮的 diff。
 
 ## 4. 测试规矩
 

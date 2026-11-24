@@ -31,6 +31,8 @@
 | 政策 | `policy.py` | 配置读取、diff → 风险分档、人签令牌签发/校验 | 不执行命令 |
 | 门禁 | `gates.py` | 机械门顺序执行、diff scope guard、债务上限、溯源 | 不修改代码 |
 | 任务文件锁 | `fslock.py` | OS 咨询锁（POSIX `flock` / Windows `msvcrt`），只锁住 read-modify-write 的临界区 | 不做租约，不跨主机 |
+| 轮次原语 | `runner.py` | 准入+租约+预算的 `claim`、worktree/brief、跑 agent、`return`/`escalate`、指标快照 | 不决定"下一轮做什么" |
+| 循环 | `loop.py` | 每轮 `reap → 选任务 → claim → reset → agent → gate → review/return`、kill switch、退避 | 不做合并（停在 review） |
 | 适配器参考实现 | `tools/agent_adapter.py` | 读 brief、擦环境变量、跑 agent、取门禁结论 | 不属于包，不许 import `orchestra.*` |
 | 路径/时钟 | `paths.py` / `clock.py` | 唯一一套路径代数；可注入时间 | — |
 
@@ -42,7 +44,7 @@ runner 只承诺三件事：
 
 1. **输入**：`brief.json`（任务、`lease_paths`、`gates.impl` 命令列表、必需 trailer）。agent 用什么模型、什么工具，控制面不关心。
 2. **输出**：worktree 里的 diff + 一次 `gate run` 的结果。**没有 diff 就没有交付**，对话记录不算交付物。
-3. **失败信号**：gate 退出码 `1`（拒绝）/ `3`（冲突）/ `4`（需要人签）/ `5`（准入拒绝：WIP 或预算）。agent 必须据此换策略或升级，不许原地重试（尝试预算会拦住）。
+3. **失败信号**：gate 退出码 `1`（拒绝）/ `3`（冲突）/ `4`（需要人签）/ `5`（准入拒绝：WIP 或预算）/ `6`（基础设施故障，不判负）。agent 必须据此换策略或升级，不许原地重试（尝试预算会拦住）。
 
 接入一个 agent = 写一个 30 行的 subprocess 适配器，读 brief、起进程、收 diff。控制面不引入任何模型 SDK。
 

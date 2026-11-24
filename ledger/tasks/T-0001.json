@@ -1,0 +1,119 @@
+{
+  "attempt": {
+    "max": 2,
+    "used": 2
+  },
+  "created_at": "2026-11-24T05:46:01Z",
+  "dead": [
+    {
+      "actor": "loop",
+      "at": "2026-11-24T05:46:10Z",
+      "note": "failed: scope",
+      "reason": "scope_violation"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T05:46:21Z",
+      "note": "failed: scope",
+      "reason": "scope_violation"
+    }
+  ],
+  "deps": [],
+  "domain": "core",
+  "failure_signature": "",
+  "fingerprint": "sha256:100863fa18fdfa588455c3c134a8e13771b573b82f81047a4b1a26ddd186060d",
+  "history": [
+    {
+      "actor": "cli",
+      "at": "2026-11-24T05:46:01Z",
+      "from": null,
+      "note": "created",
+      "to": "proposed"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T05:46:09Z",
+      "from": "proposed",
+      "note": "claimed",
+      "to": "claimed"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T05:46:09Z",
+      "from": "claimed",
+      "note": "agent started",
+      "to": "in_progress"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T05:46:10Z",
+      "from": "in_progress",
+      "note": "returned: scope_violation",
+      "to": "in_progress"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T05:46:10Z",
+      "from": "in_progress",
+      "note": "returned: scope_violation",
+      "to": "proposed"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T05:46:20Z",
+      "from": "proposed",
+      "note": "claimed",
+      "to": "claimed"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T05:46:20Z",
+      "from": "claimed",
+      "note": "agent started",
+      "to": "in_progress"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T05:46:21Z",
+      "from": "in_progress",
+      "note": "returned: scope_violation",
+      "to": "in_progress"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T05:46:21Z",
+      "from": "in_progress",
+      "note": "escalated: scope_violation (attempt budget exhausted)",
+      "to": "escalated"
+    },
+    {
+      "actor": "governance:kai",
+      "at": "2026-11-24T05:48:55Z",
+      "from": "escalated",
+      "note": "loop bug: worktree not reset between attempts; fixed and re-run as T-0002",
+      "to": "abandoned"
+    }
+  ],
+  "id": "T-0001",
+  "intent": "I-0001",
+  "lease": null,
+  "lineage": "loop-demo",
+  "owner": "",
+  "paths": [
+    "README.md"
+  ],
+  "revision": 15,
+  "risk": {
+    "blast_radius": 2,
+    "changed_files": 2,
+    "class": "T0",
+    "digest": "sha256:4b09a61157504a3543275fc84e7d6d42577803a15367c0b29ed377a5f85e2941",
+    "reasons": [],
+    "signals": []
+  },
+  "role": "patch",
+  "schema_version": 1,
+  "state": "abandoned",
+  "title": "docs: README 增加 orchestra loop 用法（由 loop 自己加）",
+  "updated_at": "2026-11-24T05:48:55Z"
+}
