@@ -14,6 +14,7 @@ from .ledger import TaskLedger, StateError
 from .paths import is_within, normalize
 from .policy import ApprovalError, classify, verify
 from .policy import ApprovalError, classify, read_key, verify
+from .roadmap import parse_proposals, parse_verdict
 IGNORED_PREFIXES = ("ledger/", ".orchestra/", "")
 
 
@@ -155,6 +156,21 @@ def run_gate(
 
     signed, meta = ledger.intent_signed(task.get("intent"))
     step("intent", signed, f"intent={task.get('intent')} signed={signed}")
+
+    role = task.get("role")
+    if role == "research":
+        try:
+            proposals = parse_proposals(work, task_id)
+            malformed = [item.get("title") for item in proposals if item["problems"]]
+            step("deliverable", not malformed, f"{len(proposals)} proposal(s)" if not malformed else f"malformed proposals: {malformed}")
+        except Exception as exc:  # noqa: BLE001 - any parse failure is a failed deliverable
+            step("deliverable", False, f"research deliverable missing or invalid: {exc}")
+    elif role == "critic":
+        try:
+            block = parse_verdict(work, task_id)
+            step("deliverable", True, f"verdict={block['verdict']} target={block['target']}")
+        except Exception as exc:  # noqa: BLE001
+            step("deliverable", False, f"critic deliverable missing or invalid: {exc}")
 
     used, cap = task["attempt"]["used"], task["attempt"]["max"]
     step("attempt-budget", used < cap, f"attempts {used}/{cap} (exhausted -> escalate, do not retry)")

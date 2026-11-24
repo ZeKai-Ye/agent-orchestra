@@ -7,6 +7,22 @@ versioning: [SemVer](https://semver.org/).
 
 Nothing yet.
 
+## [0.4.1] - 2026-11-24
+
+### Added
+
+- `role=research` with a machine-read deliverable: `roadmap/proposals/<task-id>.md`, one
+  `title/accept/scope/size` block per proposal; the impl gate fails without a valid file.
+- `roadmap import --task T [--from worktree]` turns proposals into `later` items and reports rejected
+  blocks; the round driver imports automatically after a research round passes.
+- `role=critic` with a `reviews/<task-id>.md` verdict (`refuted|confirmed`, `target`, `reason`,
+  `evidence`); a refutation without evidence fails the gate.
+- `orchestra review --task T` applies a verdict: a refuted task gets `review_verdict=refuted` and can
+  never merge; a refuted roadmap item becomes `dropped`.
+- `task new --target T-0000|R-0000`; `run_agent`-driven worktrees can carry proposals/verdicts before
+  the change is merged (`--from`).
+- ADR 0009 (research/critic separation), docs/11 section 9 with the two-round run.
+- 89 tests (was 80), including refutation-blocks-merge and empty-verdict cases.
 ## [0.4.0] - 2026-11-24
 
 ### Added

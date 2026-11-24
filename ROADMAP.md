@@ -37,6 +37,7 @@ Legend: `done` shipped and tested, `next` agreed and unblocked, `later` agreed b
 - [x] `roadmap accept` requires a merged task plus the item's own verdict (no self-graded Done)
 - [x] Mechanical feasibility triage and one-at-a-time promotion
 - [x] `orchestra research --rounds/--budget/--hours` composing accept, triage, promote, work, record
+- [x] `role=research` proposals and `role=critic` verdicts; a refutation blocks the conclusion
 
 ## Next -> M3 sharded CI and two-level integration
 
@@ -60,7 +61,7 @@ Legend: `done` shipped and tested, `next` agreed and unblocked, `later` agreed b
 
 ## Backlog -> still open from the pequalnp case (docs/09)
 
-4. `refute` role: a failing test that disproves a claimed fix is a valid deliverable.
+4. [x] `critic` role: a refutation (with evidence) blocks a merge and drops an item (v0.4.1)
 5. Constrained decomposition: one proposal splits a parent into 2-4 child tasks with disjoint paths,
    all inside the parent lease; the parent closes only after the children merge.
 6. `needs_human` gate level: soft violations queue for a person instead of failing outright.

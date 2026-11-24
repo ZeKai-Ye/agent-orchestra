@@ -258,3 +258,129 @@ def best_candidate(repo: Path) -> dict | None:
         return None
     candidates.sort(key=lambda entry: (-entry["score"], entry["id"]))
     return candidates[0]
+# --------------------------------------------------------------------------
+# research deliverables: proposals and adversarial verdicts
+# --------------------------------------------------------------------------
+PROPOSAL_DIR = Path("roadmap") / "proposals"
+REVIEW_DIR = Path("reviews")
+VERDICTS = ("refuted", "confirmed")
+
+
+def proposal_path(repo: Path, task_id: str) -> Path:
+    return Path(repo) / PROPOSAL_DIR / f"{task_id}.md"
+
+
+def verdict_path(repo: Path, task_id: str) -> Path:
+    return Path(repo) / REVIEW_DIR / f"{task_id}.md"
+
+
+def parse_blocks(text: str) -> list[dict]:
+    """Parse `key: value` blocks separated by `---`; returns one dict per block."""
+
+    blocks: list[dict] = []
+    current: dict[str, str] = {}
+    for line in text.splitlines():
+        if line.strip() == "---":
+            if current:
+                blocks.append(current)
+            current = {}
+            continue
+        if ":" in line and not line.lstrip().startswith("#"):
+            key, value = line.split(":", 1)
+            current[key.strip().lower()] = value.strip()
+    if current:
+        blocks.append(current)
+    return blocks
+
+
+def parse_proposals(repo: Path, task_id: str) -> list[dict]:
+    """Read a research task's proposals; every proposal must carry a runnable verdict."""
+
+    path = proposal_path(repo, task_id)
+    if not path.exists():
+        raise RoadmapError(f"research task {task_id} must write {PROPOSAL_DIR / (task_id + '.md')}")
+    proposals = []
+    for block in parse_blocks(path.read_text(encoding="utf-8")):
+        if "title" not in block:
+            continue
+        problems = []
+        if not block.get("accept"):
+            problems.append("accept missing")
+        if not block.get("scope"):
+            problems.append("scope missing")
+        proposals.append({**block, "problems": problems})
+    if not proposals:
+        raise RoadmapError(f"{path} has no proposal block (expected 'title:' + 'accept:' + 'scope:')")
+    return proposals
+
+
+def import_proposals(ctx, task_id: str, root: Path | None = None) -> list[dict]:
+    """Turn a research task's proposals into later items (rejecting malformed ones).
+
+    ``root`` lets the round driver read the proposal file out of the task's worktree,
+    before the change itself is merged.
+    """
+
+    created, rejected = [], []
+    for block in parse_proposals(Path(root) if root else ctx.repo, task_id):
+        if block["problems"]:
+            rejected.append({"title": block.get("title"), "problems": block["problems"]})
+            continue
+        item = create(
+            ctx.repo,
+            title=block["title"],
+            accept=block["accept"],
+            scope=[part.strip() for part in block["scope"].replace(",", " ").split() if part.strip()],
+            size=(block.get("size") or "S").upper()[:1],
+            origin=f"research:{task_id}",
+        )
+        created.append(item)
+    ctx.store.event("roadmap.imported", task_id=task_id, actor="research",
+                    created=[item["id"] for item in created], rejected=len(rejected))
+    return [{"created": created, "rejected": rejected}]
+
+
+def parse_verdict(repo: Path, task_id: str) -> dict:
+    path = verdict_path(repo, task_id)
+    if not path.exists():
+        raise RoadmapError(f"critic task {task_id} must write {REVIEW_DIR / (task_id + '.md')}")
+    blocks = parse_blocks(path.read_text(encoding="utf-8"))
+    if not blocks:
+        raise RoadmapError(f"{path} has no verdict block")
+    block = blocks[0]
+    verdict = (block.get("verdict") or "").lower()
+    if verdict not in VERDICTS:
+        raise RoadmapError(f"{path}: verdict must be one of {', '.join(VERDICTS)}")
+    if not block.get("target"):
+        raise RoadmapError(f"{path}: target is required (a task T-0000 or an item R-0000)")
+    if verdict == "refuted" and not block.get("evidence"):
+        raise RoadmapError(f"{path}: a refutation needs evidence (a command or a path)")
+    if not block.get("reason"):
+        raise RoadmapError(f"{path}: reason is required")
+    return block
+
+
+def apply_verdict(ctx, task_id: str, root: Path | None = None) -> dict:
+    """Refutation blocks a conclusion: a refuted task may not merge, a refuted item is dropped."""
+
+    block = parse_verdict(Path(root) if root else ctx.repo, task_id)
+    target = block["target"].strip()
+    verdict = block["verdict"].lower()
+    result = {"verdict": verdict, "target": target, "applied": None}
+    if target.startswith("R-"):
+        item = get(load(ctx.repo), target)
+        if verdict == "refuted":
+            updated = set_status(ctx.repo, target, "dropped", dropped_at=ctx.clock.iso(),
+                                 refuted_by=task_id, reason=block["reason"])
+        else:
+            items = load(ctx.repo)
+            item = get(items, target)
+            item["reviewed"] = {"by": task_id, "at": ctx.clock.iso()}
+            save(ctx.repo, items)
+            updated = item
+        result["applied"] = updated
+    else:
+        ctx.ledger.set_verdict(target, verdict, by=task_id, reason=block["reason"])
+        result["applied"] = ctx.ledger.load(target)
+    ctx.store.event("review.applied", task_id=task_id, actor="critic", target=target, verdict=verdict)
+    return result

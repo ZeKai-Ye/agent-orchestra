@@ -1,0 +1,76 @@
+{
+  "attempt": {
+    "max": 2,
+    "used": 0
+  },
+  "created_at": "2026-11-24T06:32:35Z",
+  "dead": [],
+  "deps": [],
+  "domain": "core",
+  "failure_signature": "",
+  "fingerprint": "sha256:9194ec835e2c32e38a9a3122392ae45e13907c2d3ce58de19be122e7008633cd",
+  "history": [
+    {
+      "actor": "cli",
+      "at": "2026-11-24T06:32:35Z",
+      "from": null,
+      "note": "created",
+      "to": "proposed"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T06:32:35Z",
+      "from": "proposed",
+      "note": "claimed",
+      "to": "claimed"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T06:32:35Z",
+      "from": "claimed",
+      "note": "agent started",
+      "to": "in_progress"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T06:32:36Z",
+      "from": "in_progress",
+      "note": "gate passed",
+      "to": "review"
+    }
+  ],
+  "id": "T-0008",
+  "intent": "I-0001",
+  "lease": {
+    "expires_at": 1795503755,
+    "group": "L-1680fc146c52",
+    "holder": "loop",
+    "mode": "write",
+    "paths": [
+      "roadmap"
+    ],
+    "task": "T-0008",
+    "ttl": 1800
+  },
+  "lineage": "local",
+  "owner": "",
+  "paths": [
+    "roadmap"
+  ],
+  "revision": 5,
+  "risk": {
+    "blast_radius": 1,
+    "changed_files": 1,
+    "class": "T0",
+    "digest": "sha256:ce6c3594f8d154c3b00d8bfed8b576398bd68cf9c4eec9cb129545da53319ad3",
+    "reasons": [],
+    "signals": []
+  },
+  "roadmap": null,
+  "role": "research",
+  "schema_version": 1,
+  "state": "review",
+  "target": null,
+  "title": "research: merge queue shortlist (proposals)",
+  "updated_at": "2026-11-24T06:32:36Z"
+}

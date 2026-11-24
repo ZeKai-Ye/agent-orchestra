@@ -1,0 +1,76 @@
+{
+  "attempt": {
+    "max": 2,
+    "used": 0
+  },
+  "created_at": "2026-11-24T06:32:45Z",
+  "dead": [],
+  "deps": [],
+  "domain": "core",
+  "failure_signature": "",
+  "fingerprint": "sha256:10d26abd79eef8136da973cc961b1ada14f34ec34e3180924f9162aa3c7a918b",
+  "history": [
+    {
+      "actor": "cli",
+      "at": "2026-11-24T06:32:45Z",
+      "from": null,
+      "note": "created",
+      "to": "proposed"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T06:32:45Z",
+      "from": "proposed",
+      "note": "claimed",
+      "to": "claimed"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T06:32:45Z",
+      "from": "claimed",
+      "note": "agent started",
+      "to": "in_progress"
+    },
+    {
+      "actor": "loop",
+      "at": "2026-11-24T06:32:46Z",
+      "from": "in_progress",
+      "note": "gate passed",
+      "to": "review"
+    }
+  ],
+  "id": "T-0009",
+  "intent": "I-0001",
+  "lease": {
+    "expires_at": 1795503765,
+    "group": "L-3c5d022f8383",
+    "holder": "loop",
+    "mode": "write",
+    "paths": [
+      "reviews"
+    ],
+    "task": "T-0009",
+    "ttl": 1800
+  },
+  "lineage": "local",
+  "owner": "",
+  "paths": [
+    "reviews"
+  ],
+  "revision": 5,
+  "risk": {
+    "blast_radius": 1,
+    "changed_files": 1,
+    "class": "T0",
+    "digest": "sha256:d0143bb3fdad601c4d6e3cb4badbb87718054c9b467fbdf0aa3c9b0b26276468",
+    "reasons": [],
+    "signals": []
+  },
+  "roadmap": null,
+  "role": "critic",
+  "schema_version": 1,
+  "state": "review",
+  "target": "R-0004",
+  "title": "critic: R-0004 的验收判据是空的",
+  "updated_at": "2026-11-24T06:32:46Z"
+}

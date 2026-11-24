@@ -23,6 +23,7 @@ from .roadmap import (
     accept_item,
     best_candidate,
     get,
+    import_proposals,
     load,
     promote_item,
     save,
@@ -142,6 +143,14 @@ def run_research(
             env_extra=env_extra,
             log=log,
         )
+        worked = (entry["loop"].get("rounds") or [{}])[0]
+        if worked.get("task") and entry["loop"].get("review"):
+            task_obj = ctx.ledger.load(worked["task"])
+            if task_obj.get("role") == "research":
+                imported = import_proposals(ctx, worked["task"], root=worked.get("worktree"))[0]
+                entry["imported"] = imported
+                log(f"round {number}: imported {len(imported['created'])} proposal(s) from {worked['task']}"
+                    + (f", rejected {len(imported['rejected'])}" if imported["rejected"] else ""))
         entry["snapshot"] = metrics_snapshot(ctx)
         _record_round(ctx, number, entry)
         summary["rounds"].append(entry)

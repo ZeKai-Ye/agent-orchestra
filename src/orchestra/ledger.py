@@ -20,7 +20,7 @@ from .fslock import advisory_lock
 from .paths import normalize_many
 
 SCHEMA_VERSION = 1
-ROLES = ("patch", "refactor", "test", "verify", "research", "coordinate")
+ROLES = ("patch", "refactor", "test", "verify", "research", "coordinate", "critic")
 RISK_CLASSES = ("T0", "T1", "T2")
 DEAD_REASONS = (
     "gate_failed",
@@ -159,6 +159,7 @@ class TaskLedger:
         failure_signature: str = "",
         task_id: str | None = None,
         roadmap: str | None = None,
+        target: str | None = None,
     ) -> dict:
         if role not in ROLES:
             raise LedgerError(f"unknown role: {role} (expected one of {', '.join(ROLES)})")
@@ -181,6 +182,7 @@ class TaskLedger:
             "owner": owner,
             "intent": intent or None,
             "roadmap": roadmap or None,
+            "target": target or None,
             "state": "proposed",
             "paths": normalize_many(paths),
             "deps": sorted(set(deps)),
@@ -249,6 +251,10 @@ class TaskLedger:
             raise StateError(f"illegal transition {previous} -> {to} (allowed: {allowed})")
         if to == "quarantined" and not actor.startswith("governance"):
             raise StateError("quarantined is a governance-only state (use --actor governance:<who>)")
+        if to == "merged" and task.get("review_verdict") == "refuted":
+            raise StateError(
+                f"cannot merge {task_id}: refuted by {task.get('review_by')} - answer the refutation first"
+            )
         if to == "merged":
             signed, _meta = self.intent_signed(task.get("intent"))
             if not signed:
@@ -315,7 +321,24 @@ class TaskLedger:
 
         return self.update(task_id, mutate)
 
+    def set_verdict(self, task_id: str, verdict: str, *, by: str, reason: str = "") -> dict:
+        """Record an adversarial verdict; a refuted task can never merge."""
+
+        if verdict not in ("refuted", "confirmed"):
+            raise LedgerError(f"invalid verdict: {verdict}")
+
+        def mutate(task: dict) -> None:
+            task["review_verdict"] = verdict
+            task["review_by"] = by
+            task.setdefault("history", []).append(
+                {"at": self.clock.iso(), "from": task["state"], "to": task["state"],
+                 "actor": by, "note": f"verdict {verdict}: {reason}".strip()}
+            )
+
+        return self.update(task_id, mutate)
+
     # -- validation --------------------------------------------------------
+
     def validate(self, task: dict) -> list[str]:
         problems: list[str] = []
         required = (
@@ -357,6 +380,9 @@ class TaskLedger:
             problems.append(f"invalid risk class: {risk.get('class')}")
         if task["state"] == "merged" and not task.get("intent"):
             problems.append("merged task must reference an intent")
+        target = task.get("target")
+        if target is not None and not re.match(r"^[TR]-\d{4}$", str(target)):
+            problems.append(f"invalid target: {target!r} (expected T-0000 or R-0000)")
         roadmap_id = task.get("roadmap")
         if roadmap_id is not None and not re.match(r"^R-\d{4}$", str(roadmap_id)):
             problems.append(f"invalid roadmap id: {roadmap_id!r}")

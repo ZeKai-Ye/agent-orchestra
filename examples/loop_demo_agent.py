@@ -38,12 +38,49 @@ python -m orchestra.cli --repo . stop     # kill switch；下一轮不再领取�
 """
 
 
+PROPOSALS = """---
+title: Compare the two shortlisted merge queues and write an ADR
+accept: python -m unittest tests.test_roadmap
+scope: docs/06-references.md
+size: S
+---
+
+---
+title: Adopt the merge queue with the best latency data
+accept: python -c "print(1)"
+scope: docs
+size: S
+---
+"""
+
+VERDICT = """---
+verdict: refuted
+target: {target}
+evidence: the acceptance command prints 1 and cannot fail, so it proves nothing
+reason: acceptance command is vacuous
+---
+"""
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--brief", required=True)
     args = parser.parse_args()
 
     brief = json.loads(Path(args.brief).read_text(encoding="utf-8"))
+    task = brief.get("task") or {}
+    role = task.get("role")
+    if role == "research":
+        out = Path("roadmap") / "proposals"
+        out.mkdir(parents=True, exist_ok=True)
+        (out / f"{task['id']}.md").write_text(PROPOSALS, encoding="utf-8")
+        print(f"research: wrote 2 proposals for {task['id']}")
+        return 0
+    if role == "critic":
+        out = Path("reviews")
+        out.mkdir(exist_ok=True)
+        (out / f"{task['id']}.md").write_text(VERDICT.format(target=task.get("target")), encoding="utf-8")
+        print(f"critic: refuted {task.get('target')}")
+        return 0
     lease = brief.get("lease_paths") or []
     dead = brief.get("dead_approaches") or []
 

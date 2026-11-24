@@ -75,3 +75,29 @@ python -m orchestra.cli --repo . research --rounds 3 --budget 6 --hours 2 `
 ## 8. 测试
 
 `tests/test_roadmap.py` 15 例，覆盖：队列校验、重复 next 拒绝、不可行条目不提拔、一次只一个 next、验收必须绑定 merged 任务、验收命令失败不改状态、一轮 research 的完整流转、stop/budget 停止、上一轮先验收再提拔。全量 `Ran 80 tests ... OK`。
+
+## 9. v0.4.1 增补：research 与 critic 两个交付物角色
+
+队列条目本身也有盲点：**三查看不出"判据是空的"**。一次实测里，`accept: python -c "print(1)"`、`scope: docs` 的条目拿了 1.0 分，完全可行——但它证明不了任何事。所以补两种任务角色，各自有门禁能读的交付物：
+
+| 角色 | 必须产出 | 门禁判定 | 后续动作 |
+| --- | --- | --- | --- |
+| `research` | `roadmap/proposals/<task-id>.md`，每条 `title/accept/scope/size` 一块 | 缺文件或块缺 `accept`/`scope` → `deliverable` 步失败 | `roadmap import` 把合法块变成 `later` 条目，非法块记为 rejected |
+| `critic` | `reviews/<task-id>.md`，含 `verdict(target/reason/evidence)` | verdict 不在 `refuted|confirmed`、缺 target、反驳缺 evidence → 失败 | `orchestra review --task` 应用结论 |
+
+**反例的力量在最后一步**：被 `refuted` 的任务写进 `review_verdict=refuted`，`→ merged` 直接被状态机拒绝（"answer the refutation first"）；被 `refuted` 的条目标为 `dropped`，三查再也不会提拔它。也就是说，反驳不是评论区，是闸门。
+
+### 两轮实测（本仓库，2026-11-24）
+
+| 轮次 | 任务 | 产物 | 门禁 | 结果 |
+| --- | --- | --- | --- | --- |
+| 1 | `T-0008` research | `roadmap/proposals/T-0008.md`：一条真判据 + 一条空判据 | `deliverable` PASS（1.0s）→ review | `roadmap import` 生成 `R-0003`、`R-0004`；三查给两条都打 1.0（**盲点**） |
+| 2 | `T-0009` critic（target `R-0004`） | `reviews/T-0009.md`：`refuted` + evidence="打印 1 不可能失败" | `deliverable` PASS（0.98s）→ review | `review` 应用 → `R-0004` 变 `dropped`，三查池里只剩 R-0001/2/3 |
+
+这两轮说明的是机制而不是智能：*空判据能骗过三查，但骗不过一个被要求给反例的独立任务；而它的反驳会直接改状态机，不会停在评论里*。
+
+### 仍然是人的部分
+
+- 谁来做 critic：目前由编排者（人或调度脚本）创建 `--role critic --target ...` 的任务。自动为每个 `next` 条目配一个 critic 是下一步（需要先定义"够不够、换不换人"的成本规则）。
+- `confirmed` 只是记录，不等于通过：条目仍需 `roadmap accept`（merged 任务 + 判据）才能 `done`。
+- 反例质量取决于 critic 的能力；机制只保证"反驳一定有证据、一定有后果"。

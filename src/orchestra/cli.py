@@ -34,6 +34,8 @@ from .policy import (
 )
 from .roadmap import (
     RoadmapError,
+    apply_verdict,
+    import_proposals,
     accept_item,
     create as roadmap_create,
     load as roadmap_load,
@@ -153,6 +155,7 @@ def cmd_task_new(ctx: Ctx) -> int:
         failure_signature=args.failure_signature,
         task_id=args.id,
         roadmap=args.roadmap,
+        target=args.target,
     )
     _print(args, task, f"{task['id']}\t{task['role']}\t{','.join(task['paths'])}")
     return OK
@@ -478,6 +481,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dep", nargs="*", default=None)
     p.add_argument("--failure-signature", default="")
     p.add_argument("--roadmap", default=None)
+    p.add_argument("--target", default=None, help="the task or roadmap item this task is about")
     p.add_argument("--id", default=None)
     p.set_defaults(handler=cmd_task_new)
 
@@ -595,6 +599,11 @@ def build_parser() -> argparse.ArgumentParser:
     roadmap = add("roadmap", lambda ctx: USAGE, "the machine queue behind ROADMAP.md")
     roadmap_sub = roadmap.add_subparsers(dest="sub", required=True)
 
+    p = roadmap_sub.add_parser("import", help="turn a research task's proposals into later items")
+    p.add_argument("--task", required=True)
+    p.add_argument("--from", dest="source", default=None, help="read the proposal file from this tree (e.g. a worktree)")
+    p.set_defaults(handler=cmd_roadmap_import)
+
     p = roadmap_sub.add_parser("list", help="list items")
     p.add_argument("--status", default=None, choices=["later", "next", "done", "dropped"])
     p.set_defaults(handler=cmd_roadmap_list)
@@ -623,6 +632,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--intent", default=None)
     p.add_argument("--role", default="patch")
     p.set_defaults(handler=cmd_roadmap_promote)
+
+    review = add("review", cmd_review, "apply a critic task's verdict (a refutation blocks a conclusion)")
+    review.add_argument("--task", required=True)
+    review.add_argument("--from", dest="source", default=None)
 
     research = add("research", cmd_research, "one round: accept, triage, promote, work (honours rounds/budget/hours)")
     research.add_argument("--rounds", type=int, default=1)
@@ -901,6 +914,28 @@ def cmd_research(ctx: Ctx) -> int:
         text += f" stopped={summary['stopped_reason']}"
     _print(args, summary, text)
     return FAIL if summary["needs_human"] else OK
+
+
+def cmd_roadmap_import(ctx: Ctx) -> int:
+    args = ctx.args
+    result = import_proposals(ctx, args.task, root=args.source)[0]
+    created, rejected = result["created"], result["rejected"]
+    text = f"imported {len(created)} item(s), rejected {len(rejected)}"
+    if created:
+        text += ": " + ", ".join(item["id"] for item in created)
+    _print(args, result, text)
+    return OK if created else FAIL
+
+
+def cmd_review(ctx: Ctx) -> int:
+    args = ctx.args
+    result = apply_verdict(ctx, args.task, root=args.source)
+    applied = result["applied"]
+    text = f"{result['verdict']} applied to {result['target']}"
+    if isinstance(applied, dict) and "status" in applied:
+        text += f" -> {applied['status']}"
+    _print(args, result, text)
+    return OK
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())
