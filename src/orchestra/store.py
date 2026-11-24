@@ -54,6 +54,13 @@ CREATE TABLE IF NOT EXISTS approvals_used (
     used_at    REAL    NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS cooldowns (
+    holder  TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    until   REAL NOT NULL,
+    PRIMARY KEY (holder, task_id)
+);
+
 CREATE TABLE IF NOT EXISTS budget (
     scope   TEXT PRIMARY KEY,
     spent   REAL NOT NULL DEFAULT 0,
@@ -224,4 +231,42 @@ class Store:
 
     def budget_state(self) -> list[dict]:
         rows = self.conn.execute("SELECT scope, spent, ceiling FROM budget ORDER BY scope").fetchall()
+        return [dict(row) for row in rows]
+
+    # -- per-holder admission (loops and fleets) ---------------------------
+    def holder_leases(self, holder: str, now: float) -> int:
+        """How many distinct lease groups a holder currently owns."""
+
+        row = self.conn.execute(
+            "SELECT COUNT(DISTINCT group_id) AS n FROM leases "
+            "WHERE holder = ? AND state = 'active' AND expires_at > ?",
+            (holder, now),
+        ).fetchone()
+        return int(row["n"])
+
+    def cooldown_until(self, holder: str, task_id: str) -> float:
+        row = self.conn.execute(
+            "SELECT until FROM cooldowns WHERE holder = ? AND task_id = ?", (holder, task_id)
+        ).fetchone()
+        return 0.0 if row is None else float(row["until"])
+
+    def cooldown_set(self, holder: str, task_id: str, until: float) -> None:
+        with self.immediate() as conn:
+            conn.execute(
+                "INSERT INTO cooldowns(holder, task_id, until) VALUES (?,?,?) "
+                "ON CONFLICT(holder, task_id) DO UPDATE SET until = ?",
+                (holder, task_id, float(until), float(until)),
+            )
+            self.event(
+                "cooldown.set",
+                conn=conn,
+                task_id=task_id,
+                actor=holder,
+                until=float(until),
+            )
+
+    def cooldown_list(self) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT holder, task_id, until FROM cooldowns ORDER BY until"
+        ).fetchall()
         return [dict(row) for row in rows]

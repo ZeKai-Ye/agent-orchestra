@@ -10,6 +10,10 @@ max_ttl = 28800
 # Admission control: claims are refused once WIP reaches this number.
 wip_limit = 16
 research_share = 0.10
+# Per holder: how many tasks one agent/loop may hold at once, and how long it is
+# barred from a task it handed back as out_of_time/other (anti-thrash).
+per_holder_limit = 2
+cooldown_minutes = 30
 
 [budget]
 # Cost charged to every claim, in whatever unit your envelopes use (agent-hours,

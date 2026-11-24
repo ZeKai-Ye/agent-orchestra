@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -16,7 +17,8 @@ from . import __version__
 from .clock import clock_from_env
 from .gates import GateError, changed_files, diff_text, git, resolve_base, run_gate
 from .leases import LeaseConflict, LeaseError, LeaseManager
-from .ledger import LedgerError, StateError, TaskLedger
+from .ledger import DEAD_REASONS, LedgerError, StateError, TaskLedger
+from .loop import run_loop
 from .policy import (
     AdmissionError,
     ApprovalError,
@@ -30,8 +32,9 @@ from .policy import (
     write_default_config,
 )
 from .store import Store
+from .runner import append_snapshot, claim_task, create_worktree, metrics_snapshot, return_task, split_command
 
-OK, FAIL, USAGE, CONFLICT, NEEDS_APPROVAL, ADMISSION = 0, 1, 2, 3, 4, 5
+OK, FAIL, USAGE, CONFLICT, NEEDS_APPROVAL, ADMISSION, FAULT = 0, 1, 2, 3, 4, 5, 6
 
 
 def _print(args, payload: dict, text: str | None = None) -> None:
@@ -97,79 +100,34 @@ def cmd_init(ctx: Ctx) -> int:
 
 
 def cmd_status(ctx: Ctx) -> int:
-    tasks = ctx.ledger.list()
-    counts: dict[str, int] = {}
-    for task in tasks:
-        counts[task["state"]] = counts.get(task["state"], 0) + 1
-    active = ctx.leases.active()
-    now = ctx.clock.now()
-    window = now - 86400
-    payload = {
-        "repo": str(ctx.repo),
-        "tasks": {"total": len(tasks), "by_state": counts},
-        "wip": counts.get("claimed", 0) + counts.get("in_progress", 0) + counts.get("review", 0),
-        "wip_limit": ctx.config.wip_limit() if ctx.config else None,
-        "leases": {
-            "active": len(active),
-            "expired_pending_reap": sum(1 for item in active if item["expired"]),
-            "expired_24h": ctx.store.count_events("lease.expired", window),
-            "renewed_24h": ctx.store.count_events("lease.renewed", window),
-        },
-        "gates": {
-            "passed_24h": ctx.store.count_events("gate.passed", window),
-            "failed_24h": ctx.store.count_events("gate.failed", window),
-        },
-        "budget": ctx.store.budget_state(),
-        "recent_events": ctx.store.recent_events(10),
-    }
+    payload = metrics_snapshot(ctx)
+    payload["recent_events"] = ctx.store.recent_events(10)
     if getattr(ctx.args, "append", False) or getattr(ctx.args, "out", None):
-        target = Path(ctx.args.out) if ctx.args.out else ctx.repo / ".orchestra" / "metrics" / "snapshots.jsonl"
-        snapshot = {key: value for key, value in payload.items() if key != "recent_events"}
-        snapshot["at"] = int(ctx.clock.now())
-        snapshot["iso"] = ctx.clock.iso()
-        target.parent.mkdir(parents=True, exist_ok=True)
-        with target.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(snapshot, sort_keys=True, ensure_ascii=False) + "\n")
-        payload["snapshot"] = str(target)
-
+        target = Path(ctx.args.out) if ctx.args.out else None
+        compact = {key: value for key, value in payload.items() if key != "recent_events"}
+        payload["snapshot"] = str(append_snapshot(ctx, compact, target))
     text = (
-        f"tasks={len(tasks)} wip={payload['wip']}/{payload['wip_limit']} "
+        f"tasks={payload['tasks']['total']} wip={payload['wip']}/{payload['wip_limit']} "
         f"leases={payload['leases']['active']} "
         f"gates={payload['gates']['passed_24h']}pass/{payload['gates']['failed_24h']}fail"
     )
     _print(ctx.args, payload, text)
     return OK
 
-
 def cmd_worktree_create(ctx: Ctx) -> int:
     task = ctx.ledger.load(ctx.args.task)
-    base = ctx.args.base or resolve_base(ctx.repo)
-    worktree = ctx.repo / ".orchestra" / "worktrees" / task["id"]
-    branch = f"agent/{task['lineage']}/{task['id']}"
-    git(ctx.repo, "worktree", "add", "-b", branch, str(worktree), base)
-    brief_dir = ctx.repo / ".orchestra" / "briefs"
-    brief_dir.mkdir(parents=True, exist_ok=True)
-    brief = {
-        "task": task,
-        "branch": branch,
-        "worktree": str(worktree),
-        "lease_paths": task["paths"],
-        "gates": {"impl": ctx.config.gate_commands("impl") if ctx.config else []},
-        "instructions": [
-            "stay inside lease_paths; the scope gate rejects anything else",
-            "prove success with the gate, not with prose",
-            f"commit with trailer: Task-Id: {task['id']}",
-        ],
-    }
-    brief_path = brief_dir / f"{task['id']}.json"
-    brief_path.write_text(json.dumps(brief, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
-    _print(ctx.args, {"worktree": str(worktree), "branch": branch, "brief": str(brief_path)}, str(worktree))
+    prepared = create_worktree(ctx, task)
+    _print(
+        ctx.args,
+        {"worktree": prepared["worktree"], "branch": prepared["branch"], "brief": prepared["brief"]},
+        prepared["worktree"],
+    )
     return OK
-
 
 # --------------------------------------------------------------------------
 # tasks
 # --------------------------------------------------------------------------
+
 def cmd_task_new(ctx: Ctx) -> int:
     args = ctx.args
     task = ctx.ledger.create(
@@ -205,64 +163,19 @@ def cmd_task_show(ctx: Ctx) -> int:
 def cmd_task_claim(ctx: Ctx) -> int:
     args = ctx.args
     task = ctx.ledger.load(args.task)
-    if task["state"] != "proposed":
-        raise LedgerError(f"{task['id']} is {task['state']}, only proposed tasks can be claimed")
-    if ctx.config:
-        wip = sum(1 for item in ctx.ledger.list() if item["state"] in ("claimed", "in_progress", "review"))
-        if wip >= ctx.config.wip_limit():
-            raise AdmissionError(
-                f"WIP limit reached ({wip}/{ctx.config.wip_limit()}); admission refuses the claim",
-                {"reason": "wip_limit", "wip": wip, "limit": ctx.config.wip_limit()},
-            )
-    duplicates = ctx.ledger.find_by_fingerprint(task["fingerprint"], exclude=task["id"])
-    lease = ctx.leases.acquire(
-        task_id=task["id"],
-        holder=args.holder,
-        paths=task["paths"],
+    result = claim_task(
+        ctx,
+        task,
+        args.holder,
         mode=args.mode,
         ttl=args.ttl,
-        lineage=task["lineage"],
         token=args.token,
+        cost=args.cost,
     )
-    cost = args.cost if args.cost is not None else (ctx.config.claim_cost() if ctx.config else 0.0)
-    charged: list[str] = []
-    try:
-        if cost > 0:
-            scopes = [
-                (f"intent:{task.get('intent') or 'none'}", cost),
-                (f"lineage:{task['lineage']}", cost),
-            ]
-            ok, detail = ctx.store.budget_charge(scopes)
-            if not ok:
-                raise AdmissionError(
-                    "budget envelope exhausted: scope={scope} spent={spent:.2f} + {amount:.2f} > {ceiling:.2f}".format(
-                        **detail
-                    ),
-                    detail,
-                )
-            charged = [scope for scope, _amount in scopes]
-        note = "claimed"
-        if duplicates:
-            note += f"; duplicate-suspects={','.join(t['id'] for t in duplicates)}"
-            print(
-                f"warning: same fingerprint already active: {', '.join(t['id'] for t in duplicates)}",
-                file=sys.stderr,
-            )
-        ctx.ledger.transition(task["id"], "claimed", actor=args.holder, note=note, extra={"lease": lease})
-    except BaseException:
-        # The lease was taken before the budget was charged; never leak it on refusal.
-        ctx.leases.release(lease["group"])
-        raise
-    payload = {
-        "task": task["id"],
-        "lease": lease,
-        "duplicates": [t["id"] for t in duplicates],
-        "budget_charged": charged,
-        "cost": cost,
-    }
-    _print(args, payload, lease["group"])
+    if result["duplicates"]:
+        print(f"warning: same fingerprint already active: {', '.join(result['duplicates'])}", file=sys.stderr)
+    _print(args, result, result["lease"]["group"])
     return OK
-
 
 def cmd_task_transition(ctx: Ctx) -> int:
     args = ctx.args
@@ -586,6 +499,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--note", default="")
     p.set_defaults(handler=cmd_task_attempt)
 
+    p = task_sub.add_parser("return", help="hand a task back: dead approach, cooldown, requeue")
+    p.add_argument("--task", required=True)
+    p.add_argument("--holder", required=True)
+    p.add_argument("--reason", required=True, choices=list(DEAD_REASONS))
+    p.add_argument("--note", default="")
+    p.set_defaults(handler=cmd_task_return)
+
+    p = task_sub.add_parser("dead", help="record an approach that died, for the next claimant")
+    p.add_argument("--task", required=True)
+    p.add_argument("--reason", required=True, choices=list(DEAD_REASONS))
+    p.add_argument("--note", default="")
+    p.add_argument("--actor", default="cli")
+    p.set_defaults(handler=cmd_task_dead)
+
     p = task_sub.add_parser("heartbeat", help="renew the lease of a claimed task")
     p.add_argument("--task", required=True)
     p.add_argument("--holder", default=None)
@@ -678,6 +605,24 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--kind", default=None)
     p.set_defaults(handler=cmd_approval_verify)
 
+    loop = add("loop", cmd_loop, "supervisor: claim, run an agent, gate, review, repeat")
+    loop.add_argument("--domain", default=None)
+    loop.add_argument("--max-rounds", type=int, default=1)
+    loop.add_argument("--once", action="store_true", help="one round and exit (cron-friendly)")
+    loop.add_argument("--idle-sleep", type=float, default=5.0)
+    loop.add_argument("--stop-file", default=None)
+    loop.add_argument("--agent-cmd", default=None, help='e.g. "{python} my_agent.py {brief}"')
+    loop.add_argument("--agent-env", nargs="*", default=None, help="KEY=VALUE pairs passed to the agent")
+    loop.add_argument("--holder", default="loop")
+    loop.add_argument("--timeout", type=float, default=1800.0)
+
+    stop = add("stop", cmd_stop, "write the kill-switch file so a loop stops after this round")
+    stop.add_argument("--file", default=None)
+    stop.add_argument("--by", default="human")
+
+    resume = add("resume", cmd_resume, "remove the kill-switch file")
+    resume.add_argument("--file", default=None)
+
     return parser
 
 
@@ -724,7 +669,10 @@ def main(argv: list[str] | None = None) -> int:
     except ApprovalError as exc:
         print(f"approval refused: {exc}", file=sys.stderr)
         return NEEDS_APPROVAL
-    except (LedgerError, StateError, LeaseError, PolicyError, GateError) as exc:
+    except (GateError, OSError) as exc:
+        print(f"infrastructure fault (not a verdict): {exc}", file=sys.stderr)
+        return FAULT
+    except (LedgerError, StateError, LeaseError, PolicyError) as exc:
         print(f"refused: {exc}", file=sys.stderr)
         return FAIL
     except subprocess.CalledProcessError as exc:  # pragma: no cover - defensive
@@ -733,6 +681,75 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         ctx.close()
 
+
+
+# --------------------------------------------------------------------------
+# return / dead / loop / stop
+# --------------------------------------------------------------------------
+def cmd_task_return(ctx: Ctx) -> int:
+    args = ctx.args
+    task = return_task(ctx, args.task, args.holder, args.reason, note=args.note)
+    _print(args, task, f"{task['id']} -> {task['state']} ({args.reason})")
+    return OK
+
+
+def cmd_task_dead(ctx: Ctx) -> int:
+    args = ctx.args
+    task = ctx.ledger.add_dead(args.task, args.reason, args.note, actor=args.actor)
+    _print(args, task, f"{task['id']} dead: {args.reason} ({len(task.get('dead', []))} recorded)")
+    return OK
+
+
+def _agent_env(items) -> dict:
+    env: dict[str, str] = {}
+    for item in items or []:
+        if "=" not in item:
+            raise LedgerError(f"--agent-env expects KEY=VALUE, got {item!r}")
+        key, value = item.split("=", 1)
+        env[key] = value
+    return env
+
+
+def cmd_loop(ctx: Ctx) -> int:
+    args = ctx.args
+    command = split_command(args.agent_cmd) if args.agent_cmd else None
+    summary = run_loop(
+        ctx,
+        domain=args.domain,
+        max_rounds=1 if args.once else args.max_rounds,
+        idle_sleep=args.idle_sleep,
+        stop_file=Path(args.stop_file) if args.stop_file else None,
+        agent_command=command,
+        env_extra=_agent_env(args.agent_env),
+        holder=args.holder,
+        timeout=args.timeout,
+        log=(lambda message: None) if args.json else print,
+    )
+    text = (
+        f"rounds={summary['rounds_done']} review={summary['review']} "
+        f"failed={summary['failed']} idle={summary['idle']}"
+    )
+    if summary["stopped_reason"]:
+        text += f" stopped={summary['stopped_reason']}"
+    _print(args, summary, text)
+    return OK
+
+
+def cmd_stop(ctx: Ctx) -> int:
+    path = Path(ctx.args.file) if ctx.args.file else ctx.repo / ".orchestra" / "STOP"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"stopped at {ctx.clock.iso()} by {ctx.args.by}\n", encoding="utf-8")
+    _print(ctx.args, {"stop_file": str(path)}, str(path))
+    return OK
+
+
+def cmd_resume(ctx: Ctx) -> int:
+    path = Path(ctx.args.file) if ctx.args.file else ctx.repo / ".orchestra" / "STOP"
+    removed = path.exists()
+    if removed:
+        path.unlink()
+    _print(ctx.args, {"stop_file": str(path), "removed": removed}, f"{path} removed" if removed else "no stop file")
+    return OK
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())

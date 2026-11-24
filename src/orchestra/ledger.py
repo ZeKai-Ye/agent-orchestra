@@ -22,6 +22,18 @@ from .paths import normalize_many
 SCHEMA_VERSION = 1
 ROLES = ("patch", "refactor", "test", "verify", "research", "coordinate")
 RISK_CLASSES = ("T0", "T1", "T2")
+DEAD_REASONS = (
+    "gate_failed",
+    "scope_violation",
+    "agent_failed",
+    "no_progress",
+    "missing_lemma",
+    "out_of_time",
+    "blocked_externally",
+    "submitted",
+    "reduced",
+    "other",
+)
 STATES = (
     "proposed",
     "claimed",
@@ -175,6 +187,7 @@ class TaskLedger:
             "attempt": {"used": 0, "max": int(max_attempts)},
             "risk": {"class": "T0", "signals": [], "reasons": []},
             "lease": None,
+            "dead": [],
             "revision": 0,
             "created_at": now,
             "updated_at": now,
@@ -284,6 +297,22 @@ class TaskLedger:
         task["updated_at"] = self.clock.iso()
         return self.save(task)
 
+    # -- dead approaches ---------------------------------------------------
+    def add_dead(self, task_id: str, reason: str, note: str = "", actor: str = "cli") -> dict:
+        """Record an approach that died, so the next claimant does not retry it."""
+
+        if reason not in DEAD_REASONS:
+            raise LedgerError(f"unknown dead reason: {reason} (expected one of {', '.join(DEAD_REASONS)})")
+
+        def mutate(task: dict) -> None:
+            entries = task.setdefault("dead", [])
+            entries.append(
+                {"at": self.clock.iso(), "reason": reason, "note": note.strip()[:500], "actor": actor}
+            )
+            task["dead"] = entries[-20:]
+
+        return self.update(task_id, mutate)
+
     # -- validation --------------------------------------------------------
     def validate(self, task: dict) -> list[str]:
         problems: list[str] = []
@@ -326,6 +355,15 @@ class TaskLedger:
             problems.append(f"invalid risk class: {risk.get('class')}")
         if task["state"] == "merged" and not task.get("intent"):
             problems.append("merged task must reference an intent")
+        dead = task.get("dead")
+        if dead is not None:
+            if not isinstance(dead, list):
+                problems.append("dead must be a list")
+            else:
+                for entry in dead:
+                    if not isinstance(entry, dict) or entry.get("reason") not in DEAD_REASONS:
+                        problems.append(f"invalid dead entry: {entry!r}")
+                        break
         return problems
 
     # -- intents -----------------------------------------------------------

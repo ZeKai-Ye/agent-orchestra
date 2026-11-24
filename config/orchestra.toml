@@ -1,0 +1,35 @@
+# agent-orchestra managing itself. See docs/10-loop.md for the experiment.
+
+[lease]
+default_ttl = 1800
+max_ttl = 28800
+
+[scheduler]
+wip_limit = 4
+per_holder_limit = 2
+cooldown_minutes = 30
+
+[budget]
+default_claim_cost = 1.0
+
+[gates]
+# Cheap checks first: the impl gate runs for every agent round, the merge gate at merge.
+impl = ["python -m compileall -q src"]
+merge = ["python -m unittest discover -s tests -t ."]
+
+[paths]
+protected = ["config/**", "ledger/**"]
+
+[domains.core]
+paths = ["src/orchestra", "tests", "docs", "examples", "README.md", "tools"]
+owners = ["kai"]
+
+[[risk.rule]]
+class = "T1"
+name = "test-weakening"
+signals = ["deletes_tests", "adds_skip"]
+
+[[risk.rule]]
+class = "T1"
+name = "dependency-change"
+signals = ["adds_dependency"]

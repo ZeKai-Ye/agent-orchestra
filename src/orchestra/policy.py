@@ -33,7 +33,7 @@ TOKEN_PREFIX = "oap1"
 
 DEFAULTS: dict = {
     "lease": {"default_ttl": 1800, "max_ttl": 28800},
-    "scheduler": {"wip_limit": 16, "research_share": 0.1},
+    "scheduler": {"wip_limit": 16, "research_share": 0.1, "per_holder_limit": 2, "cooldown_minutes": 30},
     "budget": {"default_claim_cost": 1.0},
     "gates": {"impl": [], "merge": []},
     "risk": {"rule": []},
@@ -86,6 +86,16 @@ class Config:
         """Cost charged per claim, in whatever unit the envelope is written in."""
 
         return float(self.get("budget.default_claim_cost", 1.0))
+
+    def per_holder_limit(self) -> int:
+        """How many tasks one holder may hold at once (0 = unlimited)."""
+
+        return int(self.get("scheduler.per_holder_limit", 2))
+
+    def cooldown_minutes(self) -> float:
+        """How long a holder is barred from a task it gave back as out_of_time/other."""
+
+        return float(self.get("scheduler.cooldown_minutes", 30))
 
     def gate_commands(self, stage: str) -> list[str]:
         value = self.get(f"gates.{stage}", [])
