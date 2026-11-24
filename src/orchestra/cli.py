@@ -15,6 +15,10 @@ from pathlib import Path
 
 from . import __version__
 from .clock import clock_from_env
+from . import coord_git
+from .coord_git import ClaimConflict as GitClaimConflict, CoordError as GitCoordError
+from .handles import HandleError
+from . import handles as handle_registry
 from .critic import pair as pair_critic, status as critic_status
 from .gates import GateError, changed_files, diff_text, git, resolve_base, run_gate
 from .leases import LeaseConflict, LeaseError, LeaseManager
@@ -647,6 +651,42 @@ def build_parser() -> argparse.ArgumentParser:
     p = critic_sub.add_parser("status", help="pool, confirm streaks and open critic tasks")
     p.set_defaults(handler=cmd_critic_status)
 
+    handle = add("handle", lambda ctx: USAGE, "handle registry (one SSH key per handle)")
+    handle_sub = handle.add_subparsers(dest="sub", required=True)
+    p = handle_sub.add_parser("add", help="register a handle's public key")
+    p.add_argument("--handle", required=True)
+    p.add_argument("--key", required=True, help="path to an OpenSSH public key file")
+    p.set_defaults(handler=cmd_handle_add)
+    p = handle_sub.add_parser("list", help="list registered handles")
+    p.set_defaults(handler=cmd_handle_list)
+
+    claim = add("claim", cmd_claim, "take a git-native claim on a task (refs/claims/<task>)")
+    claim.add_argument("--task", required=True)
+    claim.add_argument("--handle", required=True)
+    claim.add_argument("--ttl", type=int, default=None)
+    claim.add_argument("--base", default=None)
+    claim.add_argument("--sign-key", default=None, help="private key used to sign the claim commit")
+    claim.add_argument("--allow-unsigned", action="store_true")
+
+    beat = add("beat", cmd_beat, "renew a claim")
+    beat.add_argument("--task", required=True)
+    beat.add_argument("--handle", required=True)
+    beat.add_argument("--ttl", type=int, default=None)
+    beat.add_argument("--sign-key", default=None)
+
+    release = add("release", cmd_release, "release a claim (optionally with a reason)")
+    release.add_argument("--task", required=True)
+    release.add_argument("--handle", required=True)
+    release.add_argument("--reason", default=None, choices=list(DEAD_REASONS))
+    release.add_argument("--note", default="")
+
+    reap = add("reap", cmd_reap, "delete expired claims (run from a scheduled job)")
+    reap.add_argument("--dry-run", action="store_true")
+
+    merge = add("merge", cmd_merge, "poll one task: gate it and fast-forward T0 work")
+    merge.add_argument("--task", required=True)
+    merge.add_argument("--dry-run", action="store_true")
+    merge.add_argument("--allow-risk", action="store_true", help="merge T1/T2 as well (humans only)")
     review = add("review", cmd_review, "apply a critic task's verdict (a refutation blocks a conclusion)")
     review.add_argument("--task", required=True)
     review.add_argument("--from", dest="source", default=None)
@@ -740,6 +780,12 @@ def main(argv: list[str] | None = None) -> int:
     ctx = Ctx(args)
     try:
         return int(args.handler(ctx))
+    except GitClaimConflict as exc:
+        print(f"claim conflict: {exc}", file=sys.stderr)
+        return CONFLICT
+    except (GitCoordError, HandleError) as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return FAIL
     except AdmissionError as exc:
         detail = f" {json.dumps(exc.detail, sort_keys=True, ensure_ascii=False)}" if exc.detail else ""
         print(f"admission refused: {exc}{detail}", file=sys.stderr)
@@ -967,6 +1013,151 @@ def cmd_critic_status(ctx: Ctx) -> int:
     rows = [f"{row['holder']}\tstreak={row['confirm_streak']}\tlast={row['last_verdict']}" for row in payload["pool"]]
     rows += [f"open\t{entry['task']}\t{entry['target']}\t{entry['state']}" for entry in payload["open_critics"]]
     _print(ctx.args, payload, "\n".join(rows) or "(no critics)")
+    return OK
+
+
+# --------------------------------------------------------------------------
+# git-native coordination: claim / beat / release / reap / merge / handle
+# --------------------------------------------------------------------------
+def _claim_record(ctx, task_id: str, handle: str, ttl: int, base: str | None) -> dict:
+    task = ctx.ledger.load(task_id)
+    now = ctx.clock.now()
+    return {
+        "task": task_id,
+        "handle": handle,
+        "paths": task["paths"],
+        "base": base or "main",
+        "started_at": int(now),
+        "expires_at": int(now + ttl),
+        "ttl": int(ttl),
+    }
+
+
+def cmd_handle_add(ctx: Ctx) -> int:
+    args = ctx.args
+    key = Path(args.key).read_text(encoding="utf-8") if Path(args.key).exists() else args.key
+    path = handle_registry.register(ctx.repo, args.handle, key)
+    _print(args, {"handle": args.handle, "key": str(path)}, str(path))
+    return OK
+
+
+def cmd_handle_list(ctx: Ctx) -> int:
+    items = handle_registry.list_handles(ctx.repo)
+    _print(ctx.args, {"handles": items}, "\n".join(items) or "(no handles registered)")
+    return OK
+
+
+def cmd_claim(ctx: Ctx) -> int:
+    args = ctx.args
+    handle_registry.exists(ctx.repo, args.handle)
+    if not handle_registry.exists(ctx.repo, args.handle):
+        raise LedgerError(f"handle {args.handle!r} is not registered: add handles/{args.handle}.pub first")
+    if args.sign_key is None and not args.allow_unsigned:
+        raise LedgerError("a claim must be signed: pass --sign-key <private key> (or --allow-unsigned for local dev)")
+    claims = coord_git.fetch_claims(ctx.repo)
+    if args.task in claims:
+        record = coord_git.read_claim(ctx.repo, args.task, claims[args.task])
+        raise coord_git.ClaimConflict(
+            f"{args.task} is claimed by {record.get('handle')} until {record.get('expires_at')}"
+        )
+    mine = [task for task, sha in claims.items()
+            if coord_git.read_claim(ctx.repo, task, sha).get("handle") == args.handle]
+    limit = ctx.config.per_holder_limit() if ctx.config else 2
+    if limit > 0 and len(mine) >= limit:
+        raise AdmissionError(f"{args.handle} already holds {len(mine)} claim(s) (limit {limit})",
+                            {"reason": "holder_limit", "held": len(mine), "limit": limit})
+    ttl = int(args.ttl or (ctx.config.lease_ttl() if ctx.config else coord_git.DEFAULT_TTL))
+    record = _claim_record(ctx, args.task, args.handle, ttl, args.base)
+    sha = coord_git.claim_commit(ctx.repo, record, args.sign_key)
+    coord_git.push_claim(ctx.repo, args.task, sha)
+    if args.sign_key:
+        coord_git.verify_claim(ctx.repo, sha, args.handle)
+    payload = {**record, "claim_ref": coord_git.claim_ref(args.task), "claim_sha": sha}
+    _print(args, payload, f"{args.task} claimed by {args.handle} until {record['expires_at']} ({sha[:12]})")
+    return OK
+
+
+def cmd_beat(ctx: Ctx) -> int:
+    args = ctx.args
+    claims = coord_git.fetch_claims(ctx.repo)
+    if args.task not in claims:
+        raise coord_git.CoordError(f"{args.task} has no claim (it may have been settled or reaped)")
+    old_sha = claims[args.task]
+    record = coord_git.read_claim(ctx.repo, args.task, old_sha)
+    if record.get("handle") != args.handle:
+        raise coord_git.ClaimConflict(f"{args.task} is held by {record.get('handle')}, not {args.handle}")
+    record["expires_at"] = int(ctx.clock.now() + (args.ttl or record.get("ttl", coord_git.DEFAULT_TTL)))
+    record["renewals"] = int(record.get("renewals", 0)) + 1
+    new_sha = coord_git.claim_commit(ctx.repo, record, args.sign_key)
+    coord_git.push_claim(ctx.repo, args.task, new_sha, force_lease=old_sha)
+    _print(args, {**record, "claim_sha": new_sha}, f"{args.task} renewed until {record['expires_at']}")
+    return OK
+
+
+def cmd_release(ctx: Ctx) -> int:
+    args = ctx.args
+    claims = coord_git.fetch_claims(ctx.repo)
+    if args.task not in claims:
+        _print(args, {"task": args.task, "released": False}, f"{args.task} had no claim")
+        return OK
+    sha = claims[args.task]
+    record = coord_git.read_claim(ctx.repo, args.task, sha)
+    if record.get("handle") != args.handle:
+        raise coord_git.ClaimConflict(f"{args.task} is held by {record.get('handle')}, not {args.handle}")
+    coord_git.delete_claim(ctx.repo, args.task, sha)
+    if args.reason:
+        try:
+            ctx.ledger.add_dead(args.task, args.reason, args.note, actor=args.handle)
+        except Exception:  # noqa: BLE001 - an unknown task must not block the release
+            pass
+    _print(args, {"task": args.task, "released": True, "reason": args.reason}, f"{args.task} released")
+    return OK
+
+
+def cmd_reap(ctx: Ctx) -> int:
+    args = ctx.args
+    reaped = coord_git.reap(ctx.repo, ctx.clock.now(), dry_run=args.dry_run)
+    text = "\n".join(f"{item['task']}\t{item['handle']}" for item in reaped) or "(nothing expired)"
+    _print(args, {"reaped": reaped, "dry_run": args.dry_run}, text)
+    return OK
+
+
+def cmd_merge(ctx: Ctx) -> int:
+    args = ctx.args
+    task = ctx.ledger.load(args.task)
+    if task["state"] not in ("review", "approved"):
+        raise LedgerError(f"{args.task} is {task['state']}: only review/approved can be merged")
+    claims = coord_git.fetch_claims(ctx.repo)
+    if args.task in claims:
+        record = coord_git.read_claim(ctx.repo, args.task, claims[args.task])
+        if not coord_git.is_expired(record, ctx.clock.now()):
+            raise coord_git.ClaimConflict(
+                f"{args.task} is still claimed by {record.get('handle')} until {record.get('expires_at')}"
+            )
+    branch = f"agent/{task['lineage']}/{task['id']}"
+    worktree = ctx.repo / ".orchestra" / "merge" / task["id"]
+    if not worktree.exists():
+        git(ctx.repo, "worktree", "add", "--detach", str(worktree), branch)
+    gate = run_gate(
+        repo=ctx.repo, task_id=args.task, stage="merge", ledger=ctx.ledger,
+        store=ctx.store, clock=ctx.clock, config=ctx.config, worktree=worktree,
+    )
+    failed = [step["name"] for step in gate["steps"] if not step["ok"]]
+    risk = (gate.get("risk") or {}).get("class")
+    if not gate["ok"]:
+        _print(args, {"ok": False, "failed": failed, "risk": risk}, f"refused: {', '.join(failed)}")
+        return FAIL
+    if risk != "T0" and not args.allow_risk:
+        _print(args, {"ok": False, "risk": risk}, f"refused: risk {risk} needs review/approval, not auto-merge")
+        return NEEDS_APPROVAL
+    if args.dry_run:
+        _print(args, {"ok": True, "risk": risk, "dry_run": True}, f"would merge {branch} (risk {risk})")
+        return OK
+    git(ctx.repo, "merge", "--ff-only", branch)
+    if task["state"] == "review":
+        ctx.ledger.transition(args.task, "approved", actor="merge", note="gate passed, T0")
+    ctx.ledger.transition(args.task, "merged", actor="merge", note=f"ff-merged {branch}")
+    _print(args, {"ok": True, "risk": risk, "branch": branch}, f"merged {branch} (risk {risk})")
     return OK
 
 if __name__ == "__main__":  # pragma: no cover

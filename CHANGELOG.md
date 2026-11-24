@@ -7,6 +7,23 @@ versioning: [SemVer](https://semver.org/).
 
 Nothing yet.
 
+## [0.5.0] - 2026-11-24
+
+### Added
+
+- Git-native claims: `orchestra claim|beat|release|reap` over `refs/claims/<task>`, with
+  `--force-with-lease` for renewal/release and TTL-based reaping.
+- Handle registry (`handles/<handle>.pub`) and SSH commit signing; an unsigned claim is refused and a
+  signature from the wrong key is rejected (`git verify-commit` + allowed_signers).
+- `orchestra merge --task T`: refuses live claims, re-runs the merge gate in a detached worktree and
+  fast-forwards only `T0` work; `T1/T2` return exit 4.
+- `join.txt` / `join.json`: the paste-once contract for outside agents (still data, not commands).
+- ADR 0010 and docs/12; 101 tests (was 96), including a real two-clone claim race.
+
+### Fixed
+
+- claim commits were built with CRLF in tree entries (Windows text-mode stdin), which made
+  `claims/<task>.json` unreadable; tree building now uses `mktree -z` with binary input.
 ## [0.4.2] - 2026-11-24
 
 ### Added
