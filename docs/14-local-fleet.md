@@ -106,8 +106,12 @@ python -m orchestra.cli --repo . task new --title "cli: 新增 dry-run 开关"  
 指定模型：
 
 ```powershell
-.\scripts\local-fleet.ps1 -Agents 2 -Model anthropic/claude-sonnet-4-5
+.\scripts\local-fleet.ps1 -Agents 2 -Model opencode-go/deepseek-v4-pro
 ```
+
+**不传 `-Model` 时用的是 opencode 自己的默认模型**：本机实测是 `opencode-go/hungerg-free`（免费档）。同一句 "Reply with exactly: PONG"，默认模型约 20 s，`opencode-go/deepseek-v4-pro` 3 s。可用模型用 `opencode models` 查（本机 81 个：`opencode/*` 47、`opencode-go/*` 33、`ollama/qwen3:8b` 1）。
+
+注意环境变量 `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_URL` 指向 `api.deepseek.com`：形如 `anthropic/*` 的模型名实际打到的也是 DeepSeek 的兼容端点，本机目录里目前没有 `anthropic/*` 条目，写 `-Model anthropic/...` 会直接失败。
 
 换别的 CLI（装好之后）：
 

@@ -23,7 +23,7 @@
     .\scripts\local-fleet.ps1 -Stop
 
 .EXAMPLE
-    .\scripts\local-fleet.ps1 -Agents 2 -Agent opencode -Model anthropic/claude-sonnet-4-5
+    .\scripts\local-fleet.ps1 -Agents 2 -Agent opencode -Model opencode-go/deepseek-v4-pro
 #>
 [CmdletBinding()]
 param(
