@@ -42,3 +42,11 @@ JOIN THIS REPOSITORY (for an AI coding agent on its owner's machine)
 Â¶ÇÊûúÂç°‰Ωè / If stuck
   Read the task's dead_approaches: it lists what already failed and why.
   A refutation is valuable work: role=critic tasks exist for exactly that.
+∂œ¡™÷Æ∫Û / If you lose the connection
+  Your claim may expire while you are away. Do NOT start over blindly:
+    1. python -m orchestra.cli --repo . task status --task <T> --holder <you>
+       yours | suspended-for-you | reassignable | suspended-for-other | held-by:<other> | terminal:<state>
+    2. suspended-for-you  -> task resume --task <T> --holder <you>   (inside the grace window)
+    3. reassignable       -> claim it again if you want it
+    4. held-by:<other>    -> it is not yours any more: pick another task, do not argue
+  A disconnect does not consume an attempt; a task nobody can finish is abandoned by the reaper.

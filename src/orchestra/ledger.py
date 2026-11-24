@@ -39,6 +39,7 @@ STATES = (
     "claimed",
     "in_progress",
     "blocked",
+    "suspended",
     "review",
     "approved",
     "merged",
@@ -50,10 +51,11 @@ TERMINAL = frozenset({"merged", "abandoned"})
 
 TRANSITIONS: dict[str, frozenset[str]] = {
     "proposed": frozenset({"claimed", "abandoned", "quarantined"}),
-    "claimed": frozenset({"in_progress", "proposed", "abandoned", "escalated"}),
-    "in_progress": frozenset({"review", "blocked", "proposed", "abandoned", "escalated"}),
-    "blocked": frozenset({"in_progress", "abandoned", "escalated"}),
-    "review": frozenset({"approved", "in_progress", "abandoned", "escalated"}),
+    "claimed": frozenset({"in_progress", "proposed", "suspended", "abandoned", "escalated"}),
+    "in_progress": frozenset({"review", "blocked", "proposed", "suspended", "abandoned", "escalated"}),
+    "blocked": frozenset({"in_progress", "suspended", "abandoned", "escalated"}),
+    "suspended": frozenset({"claimed", "proposed", "abandoned", "escalated"}),
+    "review": frozenset({"approved", "in_progress", "suspended", "abandoned", "escalated"}),
     "approved": frozenset({"merged", "abandoned"}),
     "escalated": frozenset({"proposed", "abandoned"}),
     "merged": frozenset(),
@@ -305,6 +307,40 @@ class TaskLedger:
         task["updated_at"] = self.clock.iso()
         return self.save(task)
 
+    # -- disconnection: suspend, resume, reassign ---------------------------
+    def suspend(self, task_id: str, *, holder: str, until: float, reason: str, actor: str = "reaper") -> dict:
+        """A lease died: keep the task for its holder until `until`, then it is reassignable."""
+
+        def mutate(task: dict) -> None:
+            task["suspension"] = {
+                "holder": holder,
+                "until": float(until),
+                "reason": reason,
+                "at": self.clock.iso(),
+            }
+
+        task = self.update(task_id, mutate)
+        if task["state"] == "suspended":
+            return task
+        return self.transition(task_id, "suspended", actor=actor, note="disconnected: " + reason)
+
+    def suspension(self, task: dict) -> dict | None:
+        value = task.get("suspension")
+        return value if isinstance(value, dict) else None
+
+    def resume(self, task_id: str, holder: str) -> dict:
+        """Only the suspended holder may resume, and only inside the grace window."""
+
+        task = self.load(task_id)
+        if task["state"] != "suspended":
+            raise StateError(f"{task_id} is {task['state']}: nothing to resume")
+        info = self.suspension(task) or {}
+        if info.get("holder") != holder:
+            raise StateError(f"{task_id} is suspended for {info.get('holder')}, not {holder}")
+        if float(info.get("until", 0)) <= self.clock.now():
+            raise StateError(f"{task_id} suspension expired at {int(info.get('until', 0))}: it is reassignable now")
+        return self.transition(task_id, "claimed", actor=holder, note="resumed after disconnect")
+
     # -- dead approaches ---------------------------------------------------
     def add_dead(self, task_id: str, reason: str, note: str = "", actor: str = "cli") -> dict:
         """Record an approach that died, so the next claimant does not retry it."""
@@ -386,7 +422,13 @@ class TaskLedger:
         roadmap_id = task.get("roadmap")
         if roadmap_id is not None and not re.match(r"^R-\d{4}$", str(roadmap_id)):
             problems.append(f"invalid roadmap id: {roadmap_id!r}")
+        suspension = task.get("suspension")
+        if suspension is not None and (
+            not isinstance(suspension, dict) or not suspension.get("holder") or "until" not in suspension
+        ):
+            problems.append("suspension must hold holder and until")
         dead = task.get("dead")
+
         if dead is not None:
             if not isinstance(dead, list):
                 problems.append("dead must be a list")

@@ -61,12 +61,19 @@ class KillTests(RepoCase):
         reaped = json.loads(cli(self.repo, "lease", "reap", "--json", now=later, expect=0).stdout)["reclaimed"]
         self.assertEqual(reaped, [self.task["id"]])
         self.assertEqual(json.loads(cli(self.repo, "lease", "list", "--json", now=later).stdout)["leases"], [])
+        # v0.5.1: the task is suspended for its holder first, then reassignable after the grace.
         self.assertEqual(
             json.loads(cli(self.repo, "task", "show", "--task", self.task["id"], "--json", now=later).stdout)["state"],
+            "suspended",
+        )
+        after_grace = later + 3 * 3600
+        cli(self.repo, "lease", "reap", "--json", now=after_grace, expect=0)
+        self.assertEqual(
+            json.loads(cli(self.repo, "task", "show", "--task", self.task["id"], "--json", now=after_grace).stdout)["state"],
             "proposed",
         )
         # A different agent can now take the same path.
-        cli(self.repo, "task", "claim", "--task", self.task["id"], "--holder", "agent-2", now=later, expect=0)
+        cli(self.repo, "task", "claim", "--task", self.task["id"], "--holder", "agent-2", now=after_grace, expect=0)
 
 
 class ConcurrencyTests(RepoCase):

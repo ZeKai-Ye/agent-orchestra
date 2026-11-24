@@ -7,6 +7,26 @@ versioning: [SemVer](https://semver.org/).
 
 Nothing yet.
 
+## [0.5.1] - 2026-11-24
+
+### Added
+
+- `suspended` task state: when a lease TTL expires the task is reserved for its holder for
+  `[scheduler] resume_grace_minutes` (default 120) instead of jumping back into the pool.
+- `task resume --task T --holder H`: the same holder resumes inside the grace, keeping its attempt
+  counter (a disconnect is not a failed attempt).
+- `task status --task T --holder H`: a reconnecting agent learns the verdict directly -
+  `yours` / `suspended-for-you` / `reassignable` / `suspended-for-other` / `held-by:<other>` /
+  `terminal:<state>`.
+- Reassignment: once the grace expires, `lease reap` returns the task to `proposed` with a history
+  note; a task whose attempt budget is already exhausted is `abandoned` as unrecoverable.
+- `task claim` refuses a suspended task with exit 5 and `reason=suspended` (holder + until in the JSON).
+- docs/13-disconnect.md, join.txt reconnect section; 108 tests (was 101).
+
+### Changed
+
+- `test_killed_holder_is_reaped_after_ttl` now asserts the two-step recovery (suspended, then
+  reassignable after the grace) instead of an immediate requeue.
 ## [0.5.0] - 2026-11-24
 
 ### Added

@@ -33,7 +33,7 @@ TOKEN_PREFIX = "oap1"
 
 DEFAULTS: dict = {
     "lease": {"default_ttl": 1800, "max_ttl": 28800},
-    "scheduler": {"wip_limit": 16, "research_share": 0.1, "per_holder_limit": 2, "cooldown_minutes": 30},
+    "scheduler": {"wip_limit": 16, "research_share": 0.1, "per_holder_limit": 2, "cooldown_minutes": 30, "resume_grace_minutes": 120},
     "budget": {"default_claim_cost": 1.0},
     "critic": {"pool": ["critic-a", "critic-b"], "max_confirm_streak": 2, "required_sizes": ["S", "M", "L"], "scope": ["reviews"]},
     "gates": {"impl": [], "merge": []},
@@ -97,6 +97,11 @@ class Config:
         """How long a holder is barred from a task it gave back as out_of_time/other."""
 
         return float(self.get("scheduler.cooldown_minutes", 30))
+
+    def resume_grace_minutes(self) -> int:
+        """How long a disconnected holder may still resume its own task."""
+
+        return int(self.get("scheduler.resume_grace_minutes", 120))
 
     def gate_commands(self, stage: str) -> list[str]:
         value = self.get(f"gates.{stage}", [])

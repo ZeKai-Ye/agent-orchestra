@@ -14,6 +14,7 @@ research_share = 0.10
 # barred from a task it handed back as out_of_time/other (anti-thrash).
 per_holder_limit = 2
 cooldown_minutes = 30
+resume_grace_minutes = 120   # a disconnected agent may still resume its task inside this window
 
 [critic]
 # Every item that enters the queue gets one adversarial reviewer. A reviewer whose

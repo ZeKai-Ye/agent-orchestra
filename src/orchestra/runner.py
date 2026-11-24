@@ -99,6 +99,13 @@ def claim_task(ctx, task: dict, holder: str, *, mode: str = "write", ttl: int | 
                token: str | None = None, cost: float | None = None) -> dict:
     """Admission control, lease, budget, transition. Refusals leave no side effects."""
 
+    if task["state"] == "suspended":
+        info = ctx.ledger.suspension(task) or {}
+        raise AdmissionError(
+            f"{task['id']} is suspended for {info.get('holder')} until {int(info.get('until', 0))}; "
+            f"that holder may `task resume`, others wait for the grace to expire",
+            {"reason": "suspended", "holder": info.get("holder"), "until": int(info.get("until", 0))},
+        )
     if task["state"] != "proposed":
         raise LedgerError(f"{task['id']} is {task['state']}, only proposed tasks can be claimed")
     config = ctx.config

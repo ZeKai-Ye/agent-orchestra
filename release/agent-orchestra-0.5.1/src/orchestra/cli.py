@@ -534,6 +534,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--actor", default="cli")
     p.set_defaults(handler=cmd_task_dead)
 
+    p = task_sub.add_parser("status", help="what happened to my task? (yours / suspended-for-you / reassignable / held-by)")
+    p.add_argument("--task", required=True)
+    p.add_argument("--holder", required=True)
+    p.set_defaults(handler=cmd_task_status)
+
+    p = task_sub.add_parser("resume", help="resume a task after a disconnect (same holder, inside the grace window)")
+    p.add_argument("--task", required=True)
+    p.add_argument("--holder", required=True)
+    p.add_argument("--mode", default="write", choices=["read", "write", "module", "repo"])
+    p.add_argument("--ttl", type=int, default=None)
+    p.set_defaults(handler=cmd_task_resume)
+
     p = task_sub.add_parser("heartbeat", help="renew the lease of a claimed task")
     p.add_argument("--task", required=True)
     p.add_argument("--holder", default=None)
@@ -1158,6 +1170,61 @@ def cmd_merge(ctx: Ctx) -> int:
         ctx.ledger.transition(args.task, "approved", actor="merge", note="gate passed, T0")
     ctx.ledger.transition(args.task, "merged", actor="merge", note=f"ff-merged {branch}")
     _print(args, {"ok": True, "risk": risk, "branch": branch}, f"merged {branch} (risk {risk})")
+    return OK
+
+
+def cmd_task_status(ctx: Ctx) -> int:
+    args = ctx.args
+    task = ctx.ledger.load(args.task)
+    holder = args.holder
+    lease = task.get("lease") or {}
+    info = ctx.ledger.suspension(task) or {}
+    until = int(info.get("until", 0))
+    if task["state"] == "suspended":
+        if info.get("holder") == holder:
+            verdict = "suspended-for-you" if until > int(ctx.clock.now()) else "reassignable"
+        else:
+            verdict = "suspended-for-other"
+    elif task["state"] in ("claimed", "in_progress", "review"):
+        verdict = "yours" if lease.get("holder") == holder else f"held-by:{lease.get('holder')}"
+    elif task["state"] == "proposed":
+        verdict = "available"
+    else:
+        verdict = f"terminal:{task['state']}"
+    payload = {
+        "task": task["id"],
+        "state": task["state"],
+        "verdict": verdict,
+        "holder": holder,
+        "lease_holder": lease.get("holder"),
+        "suspension": info or None,
+        "attempt": task["attempt"],
+    }
+    _print(args, payload, f"{task['id']}\t{verdict}\tattempt {task['attempt']['used']}/{task['attempt']['max']}")
+    return OK
+
+
+def cmd_task_resume(ctx: Ctx) -> int:
+    args = ctx.args
+    task = ctx.ledger.load(args.task)
+    if task["state"] != "suspended":
+        raise StateError(f"{task['id']} is {task['state']}: nothing to resume")
+    lease = ctx.leases.acquire(
+        task_id=task["id"],
+        holder=args.holder,
+        paths=task["paths"],
+        mode=args.mode,
+        ttl=args.ttl,
+        lineage=task["lineage"],
+    )
+    try:
+        moved = ctx.ledger.resume(args.task, args.holder)
+        ctx.ledger.set_lease(args.task, lease)
+    except BaseException:
+        ctx.leases.release(lease["group"])
+        raise
+    _print(args, {"task": moved["id"], "state": moved["state"], "lease": lease},
+           f"{moved['id']} resumed by {args.holder} (attempt {moved['attempt']['used']}/{moved['attempt']['max']})")
     return OK
 
 if __name__ == "__main__":  # pragma: no cover

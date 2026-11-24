@@ -82,6 +82,7 @@ python -m orchestra.cli --repo D:\work\myrepo approval issue --kind merge --by k
 7. 租约过期可被回收，任务自动回到 `proposed`（死 agent 不会占着路径）。
 8. 准入拒绝（WIP 或预算）有独立退出码 `5`，且不留下租约、不改任务状态。
 9. 一任务一文件，并发写入经 OS 锁串行化，不丢更新。
+10. 断联的任务先为原持有者保留（`suspended` + 宽限），过期才可被他人领取；尝试耗尽则废弃。
 
 ## 目录
 

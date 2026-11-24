@@ -192,6 +192,22 @@ class LeaseManager:
             group["paths"].append(row["path"])
         return list(groups.values())
 
+    def expire_suspensions(self, ledger) -> list[str]:
+        """After the grace window a suspended task goes back to the pool (reassignable)."""
+
+        released = []
+        for task in ledger.list("suspended"):
+            info = ledger.suspension(task) or {}
+            if float(info.get("until", 0)) > self.clock.now():
+                continue
+            try:
+                ledger.transition(task["id"], "proposed", actor="reaper",
+                                  note=f"grace expired (was {info.get('holder')}): reassignable")
+                released.append(task["id"])
+            except Exception:  # noqa: BLE001
+                continue
+        return released
+
     def reap(self, ledger=None) -> list[str]:
         """Expire stale leases and push affected tasks back into ``proposed``."""
 
@@ -202,7 +218,7 @@ class LeaseManager:
                 (now,),
             ).fetchall()
             if not rows:
-                return []
+                rows = []
             conn.execute("UPDATE leases SET state = 'expired' WHERE state = 'active' AND expires_at <= ?", (now,))
             for row in rows:
                 self.store.event(
@@ -215,16 +231,28 @@ class LeaseManager:
         tasks = sorted({row["task_id"] for row in rows})
         if ledger is None:
             return tasks
+        self.expire_suspensions(ledger)
+        grace = (self.config.resume_grace_minutes() * 60) if self.config else 7200
         for task_id in tasks:
             try:
                 task = ledger.load(task_id)
-            except Exception:  # noqa: BLE001 - unknown task ids are stale rows
+            except Exception:  # noqa: BLE001 - stale ledger rows must not stop the reaper
                 continue
-            if task.get("state") in ("claimed", "in_progress", "blocked"):
+            if task.get("state") not in ("claimed", "in_progress", "blocked"):
+                continue
+            used = int(task["attempt"]["used"])
+            cap = int(task["attempt"]["max"])
+            holder = (task.get("lease") or {}).get("holder") or "unknown"
+            if used >= cap:
                 try:
-                    ledger.transition(task_id, "proposed", actor="governance:reaper", note="lease expired")
-                except Exception:  # noqa: BLE001 - blocked cannot go straight to proposed
+                    ledger.transition(task_id, "abandoned", actor="reaper",
+                                      note="unrecoverable: attempts exhausted while disconnected")
+                except Exception:  # noqa: BLE001
                     ledger.set_lease(task_id, None)
+                continue
+            ledger.set_lease(task_id, None)
+            ledger.suspend(task_id, holder=holder, until=self.clock.now() + grace,
+                           reason="lease_expired", actor="reaper")
         return tasks
 
     def snapshot(self, target: Path) -> Path:

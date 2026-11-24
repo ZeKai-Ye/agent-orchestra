@@ -1,9 +1,9 @@
-# agent-orchestra 0.5.0 · 可直接交付的协作引擎
+# agent-orchestra 0.5.1 · 可直接交付的协作引擎
 
 给一个**已存在的代码仓库**加一层协调面：多个 agent 并发干活不互相踩、每次合并有机械判据、结论能被独立批判推翻。引擎本身零第三方依赖（Python 3.11+ 与 git），不需要服务器。
 
-- 版本 0.5.0 · 2026-11-24 · MIT
-- 自带 101 个测试，包内 `.\verify.ps1` 可独立验证
+- 版本 0.5.1 · 2026-11-24 · MIT
+- 自带 108 个测试，包内 `.\verify.ps1` 可独立验证
 - 运进别的项目只需复制 `src/orchestra` 一个目录
 
 ---
@@ -71,6 +71,8 @@ python -m orchestra.cli --repo . gate run --task T-0001 --stage impl
 
 ## 4. 退出码（脚本按它分支）
 
+断联：任务先为你保留（`suspended` + 宽限 120 分钟），重连后 `task status` 看结论、`task resume` 续上；宽限过期才可被他人领取。
+
 `0` 通过 · `1` 拒绝 · `2` 用法 · `3` 冲突（租约或 claim） · `4` 需要人签 · `5` 准入拒绝（WIP/预算/持有者上限/冷却，stderr 带 JSON reason） · `6` 基础设施故障（**不判负**，不计尝试预算，重试即可）
 
 ## 5. 七条不变量（都有测试）
@@ -92,9 +94,9 @@ python -m orchestra.cli --repo . gate run --task T-0001 --stage impl
 ## 7. 包里有什么
 
 ```
-agent-orchestra-0.5.0/
+agent-orchestra-0.5.1/
 ├─ src/orchestra/          引擎（stdlib only；cli/ledger/leases/gates/policy/loop/research/roadmap/critic/coord_git/runner …）
-├─ tests/                  101 个用例（含 8 进程租约竞态、双克隆 claim 竞态、批判拦截合并）
+├─ tests/                  108 个用例（含 8 进程租约竞态、双克隆 claim 竞态、批判拦截合并）
 ├─ tools/agent_adapter.py  参考适配器（brief 驱动、擦凭据、取门禁结论）
 ├─ examples/loop_demo_agent.py  循环实验用的确定性替身
 ├─ join.txt / join.json    外部 agent 契约（可整段粘贴 / 机器可读）
@@ -119,7 +121,7 @@ agent-orchestra-0.5.0/
 ## 9. 交付自检
 
 ```powershell
-.\verify.ps1        # 101 个用例；绿了说明这份包是自洽的
+.\verify.ps1        # 108 个用例；绿了说明这份包是自洽的
 ```
 
 有疑问时先读 `docs/02-architecture.md`（三面边界）与 `docs/04-gates-risk-security.md`（门序与风险分档）；外部接入读 `join.txt`；轮次与自主开发读 `docs/11-rounds.md`。
