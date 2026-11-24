@@ -139,3 +139,19 @@ $env:PYTHONPATH = "$PWD\src"; python -m unittest discover -s tests -t . -v
 ## License
 
 MIT，见 [LICENSE](LICENSE)。
+
+## 循环开发（orchestra loop）
+
+`orchestra loop` 是 supervisor，每轮固定 `reap → claim → worktree → agent → gate → review`：
+
+- 失败按原因写进任务的 `dead_approaches`，下一轮的 brief 会带上它，避免重走死路；
+- 尝试预算耗尽自动 `escalate`，不会无限重试；
+- 准入拒绝（WIP / 每持有者上限 / 预算 / 冷却）退避后重试；
+- 门禁自身异常返回 `6`（infrastructure fault），不计入尝试预算；
+- `orchestra stop` 写 kill switch，循环在下一轮开始前退出。
+
+```powershell
+python -m orchestra.cli --repo . loop --once --agent-cmd "python my_agent.py --brief {brief}"
+python -m orchestra.cli --repo . loop --max-rounds 10 --idle-sleep 30 --agent-cmd "python my_agent.py --brief {brief}"
+python -m orchestra.cli --repo . stop     # kill switch；下一轮不再领取任务
+```
