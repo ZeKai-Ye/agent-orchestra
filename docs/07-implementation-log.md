@@ -106,3 +106,5 @@ python -m unittest tests.test_gates -v
 ### 7.4 刻意没做
 
 没有自己去写 merge queue。`docs/06` 查到 `uber/submitqueue` 与 `funador/claude-code-merge-queue` 已经解决同一问题，M3 的第一项是**评估后选型**，而不是直接开写——这是本轮唯一改变原计划顺序的地方。
+
+<!-- loop attempt 2: inside the lease after dead=scope_violation -->
