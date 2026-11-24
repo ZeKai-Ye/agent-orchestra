@@ -40,6 +40,15 @@ Legend: `done` shipped and tested, `next` agreed and unblocked, `later` agreed b
 - [x] `role=research` proposals and `role=critic` verdicts; a refutation blocks the conclusion
 - [x] Critics are paired automatically, with `confirmed`-streak rotation (v0.4.2)
 
+## Done -> M3.6 outside contributors (v0.5.0)
+
+- [x] Claims as git refs (`refs/claims/<task>`), CAS by push, `--force-with-lease` renewal, TTL reaping
+- [x] Handle registry with SSH commit signatures; unsigned or wrong-key claims refused
+- [x] `orchestra merge` polling: live claim refuses, T0 only, T1/T2 need review
+- [x] `join.txt` / `join.json` for outside agents
+- [ ] CI re-runs the gate on pull requests (today: local gate + maintainer re-run)
+- [ ] Per-handle rate limits over time (today: only concurrent claim count)
+
 ## Next -> M3 sharded CI and two-level integration
 
 - [ ] Evaluate `funador/claude-code-merge-queue` and `uber/submitqueue` before writing a merge queue (now tracked as `R-0001` in `roadmap/items.jsonl`)
