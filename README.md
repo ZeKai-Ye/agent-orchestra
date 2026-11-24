@@ -159,6 +159,9 @@ MIT，见 [LICENSE](LICENSE)。
 
 ## 循环开发（orchestra loop）
 
+一个 agent 自己跑：`loop --once --agent-cmd "python E:\opencode-playfield\projects\agent-orchestra\scripts\agent_run.py {brief}"`；
+N 个 agent 并行：`.\scripts\local-fleet.ps1 -Agents 3`。完整操作手册（含本机 agent 现状、故障处置表）见 [docs/14-local-fleet.md](docs/14-local-fleet.md)。
+
 `orchestra loop` 是 supervisor，每轮固定 `reap → claim → worktree → agent → gate → review`：
 
 - 失败按原因写进任务的 `dead_approaches`，下一轮的 brief 会带上它，避免重走死路；

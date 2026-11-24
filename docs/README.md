@@ -17,6 +17,7 @@ Read in this order. Each file answers one question, and no file tries to answer 
 | [11-rounds.md](11-rounds.md) | How do rounds accept Done, triage Later, promote one, and work it - with the human setting only rounds/budget/hours? | design, matches code |
 | [12-join.md](12-join.md) | How does an outside researcher's agent start working from one pasted file? | protocol, matches code |
 | [13-disconnect.md](13-disconnect.md) | What happens when an agent loses its connection: suspend, resume, reassign, abandon? | design, matches code |
+| [14-local-fleet.md](14-local-fleet.md) | How do I run N local agents on my own project today? | runbook, commands verified on Windows |
 
 ## Rules
 

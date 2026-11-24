@@ -136,3 +136,17 @@ python -m unittest tests.test_gates -v
 没有自己去写 merge queue。`docs/06` 查到 `uber/submitqueue` 与 `funador/claude-code-merge-queue` 已经解决同一问题，M3 的第一项是**评估后选型**，而不是直接开写——这是本轮唯一改变原计划顺序的地方。
 
 <!-- loop attempt 2: inside the lease after dead=scope_violation -->
+
+## v0.5.2 增补（本机多 agent 编队）
+
+新增两个**脚本**（不是库代码，不改状态机）：`scripts/agent_run.py` 把 brief 变成 prompt 并调用本机 CLI agent；`scripts/local-fleet.ps1` 起 N 条独立 supervisor。
+
+- `agent_run.py`：读 `.orchestra/briefs/<task>.json` → 生成 prompt（任务、租约路径、门禁命令、dead_approaches、六条规矩）→ 在 worktree 里跑 agent。`--print-prompt` / `--dry-run` 可离线检查。agent 分派：`opencode` → `run --auto <prompt>`；`gemini` → `-p <prompt> --skip-trust --approval-mode <mode>`；`claude` → `-p <prompt> --permission-mode <mode>`；`codex` → `exec --skip-git-repo-check <prompt>`；其它 → prompt 追加在末尾。`.cmd/.bat` 自动包一层 `cmd /c`，`.ps1` 包 `powershell -File`。
+- `local-fleet.ps1`：`-Agents N -Rounds M` 每 worker 一条 `loop --holder worker-i --timeout T`，日志落 `.orchestra/logs/worker-i.log`，pid 落 `.orchestra/fleet.json`；`-Status` / `-Stop`（写 STOP 文件）/ `-Logs`。agent 未指定时按 `%LOCALAPPDATA%\Programs\ai.opencode.desktop\resources\opencode-cli.exe` → PATH(`opencode`/`claude`/`codex`/`gemini`) 顺序探测。
+
+**实测事实（2026-02，本机 16 核 / 31.5 GB）**：
+
+- `gemini` CLI 在本机**已不可用**：`IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals`，exit 1。同一台机器的 `opencode-cli.exe`（v2.2.1，`run --auto`）正常工作。
+- 端到端在临时仓库跑通：`task new → loop --once → claim → worktree → agent_run.py → opencode (156 s) → commit a8657c7 → impl 门判定`。门禁因临时仓库缺 `docs/intents/` 而失败并回退任务——门在起作用，不是接线错误。
+- 踩到并修掉的坑：`local-fleet.ps1` 曾把 `PYTHONPATH` 指向**目标仓库**的 `src`（而不是 orchestra 自己的 `src`），子进程因此 `ModuleNotFoundError`。目标仓库不是 orchestra 源码树，这个错对真实用法是必现的。
+- 已知限制：后台子进程被父会话回收时任务停在 `in_progress`（靠 TTL + `lease reap` 或 `task resume` 收尾）；后台 Python 的 stdout 是块缓冲，强杀时日志为空——这两条都写进了 `docs/14` 的故障表。
