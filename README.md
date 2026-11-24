@@ -54,6 +54,12 @@ python -m orchestra.cli --repo D:\work\myrepo loop --once --agent-cmd "python my
 python -m orchestra.cli --repo D:\work\myrepo loop --max-rounds 10 --idle-sleep 30
 python -m orchestra.cli --repo D:\work\myrepo stop      # kill switch：下一轮开始前退出
 
+# 自主轮次：人只给 rounds/budget/hours，机器做「验收上一轮 → 三查可行性 → 提拔一个 → 干活」
+python -m orchestra.cli --repo D:\work\myrepo roadmap check
+python -m orchestra.cli --repo D:\work\myrepo roadmap triage
+python -m orchestra.cli --repo D:\work\myrepo research --rounds 3 --budget 6 --hours 2 `
+  --intent I-0001 --agent-cmd "python my_agent.py --brief {brief}"
+
 # 机械门：账簿 → 状态 → intent → diff → scope → 风险 → 配置检查 → 债务 → 溯源
 python -m orchestra.cli --repo D:\work\myrepo gate run --task T-0001 --stage impl
 
@@ -131,6 +137,7 @@ $env:PYTHONPATH = "$PWD\src"; python -m unittest discover -s tests -t . -v
 | [docs/08](E:/opencode-playfield/projects/agent-orchestra/docs/08-development-guide.md) | 加门禁、租约模式、agent 适配器的固定动作 |
 | [docs/09](E:/opencode-playfield/projects/agent-orchestra/docs/09-case-pequalnp.md) | 案例研究：pequalnp.com 的 agent 舰队怎么协作，我们采纳什么 |
 | [docs/10](E:/opencode-playfield/projects/agent-orchestra/docs/10-loop.md) | 循环开发：supervisor 的设计、五条硬约束、本仓库上的实测数据 |
+| [docs/11](E:/opencode-playfield/projects/agent-orchestra/docs/11-rounds.md) | 自主轮次：队列、验收、可行性三查、提拔规则、人只给 rounds/budget/hours |
 | [ROADMAP.md](E:/opencode-playfield/projects/agent-orchestra/ROADMAP.md) | Now / Next / Later，以及不做清单 |
 | [CONTRIBUTING.md](E:/opencode-playfield/projects/agent-orchestra/CONTRIBUTING.md) | 提交规约、门禁要求、PR 检查单 |
 | [CHANGELOG.md](E:/opencode-playfield/projects/agent-orchestra/CHANGELOG.md) | 版本变更 |

@@ -31,9 +31,16 @@ Legend: `done` shipped and tested, `next` agreed and unblocked, `later` agreed b
 - [x] Exit code `6` for infrastructure faults, never charged to the attempt budget
 - [x] Dogfooding run on this repository: one scope rejection, one clean pass, merged (docs/10)
 
+## Done -> M3.5 autonomous rounds (v0.4.0)
+
+- [x] `roadmap/items.jsonl` as the machine queue, `ROADMAP.md` stays the narrative
+- [x] `roadmap accept` requires a merged task plus the item's own verdict (no self-graded Done)
+- [x] Mechanical feasibility triage and one-at-a-time promotion
+- [x] `orchestra research --rounds/--budget/--hours` composing accept, triage, promote, work, record
+
 ## Next -> M3 sharded CI and two-level integration
 
-- [ ] Evaluate `funador/claude-code-merge-queue` and `uber/submitqueue` before writing a merge queue
+- [ ] Evaluate `funador/claude-code-merge-queue` and `uber/submitqueue` before writing a merge queue (now tracked as `R-0001` in `roadmap/items.jsonl`)
       (docs/06 section 2); record the comparison as an ADR either way
 - [ ] `affected` computation from the dependency graph, with a graph self-check: an incremental
       build can silently skip tests (docs/06 item 6)

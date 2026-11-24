@@ -19,6 +19,7 @@ from .gates import GateError, changed_files, diff_text, git, resolve_base, run_g
 from .leases import LeaseConflict, LeaseError, LeaseManager
 from .ledger import DEAD_REASONS, LedgerError, StateError, TaskLedger
 from .loop import run_loop
+from .research import run_research
 from .policy import (
     AdmissionError,
     ApprovalError,
@@ -30,6 +31,15 @@ from .policy import (
     read_key,
     verify,
     write_default_config,
+)
+from .roadmap import (
+    RoadmapError,
+    accept_item,
+    create as roadmap_create,
+    load as roadmap_load,
+    promote_item,
+    triage_all,
+    validate as roadmap_validate,
 )
 from .store import Store
 from .runner import append_snapshot, claim_task, create_worktree, metrics_snapshot, return_task, split_command
@@ -142,6 +152,7 @@ def cmd_task_new(ctx: Ctx) -> int:
         deps=args.dep or (),
         failure_signature=args.failure_signature,
         task_id=args.id,
+        roadmap=args.roadmap,
     )
     _print(args, task, f"{task['id']}\t{task['role']}\t{','.join(task['paths'])}")
     return OK
@@ -466,6 +477,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-attempts", type=int, default=3)
     p.add_argument("--dep", nargs="*", default=None)
     p.add_argument("--failure-signature", default="")
+    p.add_argument("--roadmap", default=None)
     p.add_argument("--id", default=None)
     p.set_defaults(handler=cmd_task_new)
 
@@ -580,6 +592,48 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--worktree", default=None, help="diff this worktree while the ledger stays in --repo")
     p.set_defaults(handler=cmd_gate_run)
 
+    roadmap = add("roadmap", lambda ctx: USAGE, "the machine queue behind ROADMAP.md")
+    roadmap_sub = roadmap.add_subparsers(dest="sub", required=True)
+
+    p = roadmap_sub.add_parser("list", help="list items")
+    p.add_argument("--status", default=None, choices=["later", "next", "done", "dropped"])
+    p.set_defaults(handler=cmd_roadmap_list)
+
+    p = roadmap_sub.add_parser("check", help="validate the queue (one next item, ids, shapes)")
+    p.set_defaults(handler=cmd_roadmap_check)
+
+    p = roadmap_sub.add_parser("add", help="append an item")
+    p.add_argument("--title", required=True)
+    p.add_argument("--accept", required=True, help="the command that decides it is done")
+    p.add_argument("--scope", nargs="+", required=True)
+    p.add_argument("--size", default="S", choices=["S", "M", "L"])
+    p.add_argument("--status", default="later", choices=["later", "next", "done", "dropped"])
+    p.add_argument("--origin", default="human")
+    p.set_defaults(handler=cmd_roadmap_add)
+
+    p = roadmap_sub.add_parser("triage", help="cheap feasibility on every later item")
+    p.set_defaults(handler=cmd_roadmap_triage)
+
+    p = roadmap_sub.add_parser("accept", help="mark an item done (needs a merged task + its acceptance command)")
+    p.add_argument("--item", required=True)
+    p.set_defaults(handler=cmd_roadmap_accept)
+
+    p = roadmap_sub.add_parser("promote", help="move one feasible later item to next and create its task")
+    p.add_argument("--item", required=True)
+    p.add_argument("--intent", default=None)
+    p.add_argument("--role", default="patch")
+    p.set_defaults(handler=cmd_roadmap_promote)
+
+    research = add("research", cmd_research, "one round: accept, triage, promote, work (honours rounds/budget/hours)")
+    research.add_argument("--rounds", type=int, default=1)
+    research.add_argument("--budget", type=float, default=None, help="round budget; 1 unit per round")
+    research.add_argument("--hours", type=float, default=None, help="wall-clock budget for the whole run")
+    research.add_argument("--intent", default=None)
+    research.add_argument("--agent-cmd", default=None)
+    research.add_argument("--agent-env", nargs="*", default=None)
+    research.add_argument("--holder", default="research")
+    research.add_argument("--idle-sleep", type=float, default=0.0)
+    research.add_argument("--stop-file", default=None)
     approval = add("approval", lambda ctx: USAGE, "human approval tokens")
     approval_sub = approval.add_subparsers(dest="sub", required=True)
 
@@ -672,7 +726,7 @@ def main(argv: list[str] | None = None) -> int:
     except (GateError, OSError) as exc:
         print(f"infrastructure fault (not a verdict): {exc}", file=sys.stderr)
         return FAULT
-    except (LedgerError, StateError, LeaseError, PolicyError) as exc:
+    except (LedgerError, StateError, LeaseError, PolicyError, RoadmapError) as exc:
         print(f"refused: {exc}", file=sys.stderr)
         return FAIL
     except subprocess.CalledProcessError as exc:  # pragma: no cover - defensive
@@ -750,6 +804,103 @@ def cmd_resume(ctx: Ctx) -> int:
         path.unlink()
     _print(ctx.args, {"stop_file": str(path), "removed": removed}, f"{path} removed" if removed else "no stop file")
     return OK
+
+
+# --------------------------------------------------------------------------
+# roadmap queue / research rounds
+# --------------------------------------------------------------------------
+def cmd_roadmap_list(ctx: Ctx) -> int:
+    items = roadmap_load(ctx.repo)
+    if ctx.args.status:
+        items = [item for item in items if item.get("status") == ctx.args.status]
+    rows = [
+        f"{item['id']}\t{item.get('status')}\t{item.get('size')}\t{item.get('title')}\t[{','.join(item.get('scope', []))}]"
+        for item in items
+    ]
+    _print(ctx.args, {"items": items}, "\n".join(rows) or "(empty queue)")
+    return OK
+
+
+def cmd_roadmap_check(ctx: Ctx) -> int:
+    items = roadmap_load(ctx.repo)
+    problems: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        problems += [f"{item.get('id')}: {problem}" for problem in roadmap_validate(item)]
+        if item.get("id") in seen:
+            problems.append(f"duplicate id {item.get('id')}")
+        seen.add(item.get("id"))
+    pending = [item["id"] for item in items if item.get("status") == "next"]
+    if len(pending) > 1:
+        problems.append(f"more than one next item: {', '.join(pending)}")
+    _print(ctx.args, {"items": len(items), "problems": problems}, "ok" if not problems else "\n".join(problems))
+    if problems:
+        raise RoadmapError(f"{len(problems)} queue problem(s)")
+    return OK
+
+
+def cmd_roadmap_add(ctx: Ctx) -> int:
+    args = ctx.args
+    item = roadmap_create(
+        ctx.repo,
+        title=args.title,
+        accept=args.accept,
+        scope=args.scope,
+        size=args.size,
+        status=args.status,
+        origin=args.origin,
+    )
+    _print(args, item, f"{item['id']}\t{item['status']}\t{item['title']}")
+    return OK
+
+
+def cmd_roadmap_triage(ctx: Ctx) -> int:
+    results = triage_all(ctx.repo)
+    rows = [
+        f"{entry['id']}\t{entry['score']}\t{'feasible' if entry['feasible'] else 'blocked'}\t{entry['title']}"
+        for entry in results
+    ]
+    _print(ctx.args, {"triage": results}, "\n".join(rows) or "(no later items)")
+    return OK
+
+
+def cmd_roadmap_accept(ctx: Ctx) -> int:
+    result = accept_item(ctx, ctx.args.item)
+    _print(ctx.args, result, f"{result['item']['id']} accepted as done ({', '.join(result['tasks'])})")
+    return OK
+
+
+def cmd_roadmap_promote(ctx: Ctx) -> int:
+    args = ctx.args
+    result = promote_item(ctx, args.item, intent=args.intent, role=args.role)
+    _print(args, result, f"{args.item} -> next, task {result['task']['id']}")
+    return OK
+
+
+def cmd_research(ctx: Ctx) -> int:
+    args = ctx.args
+    command = split_command(args.agent_cmd) if args.agent_cmd else None
+    summary = run_research(
+        ctx,
+        rounds=args.rounds,
+        budget=args.budget,
+        hours=args.hours,
+        intent=args.intent,
+        agent_command=command,
+        env_extra=_agent_env(args.agent_env),
+        holder=args.holder,
+        stop_file=Path(args.stop_file) if args.stop_file else None,
+        idle_sleep=args.idle_sleep,
+        log=(lambda message: None) if args.json else print,
+    )
+    text = (
+        f"rounds={len(summary['rounds'])} done={summary['done'] or '-'} "
+        f"promoted={summary['promoted'] or '-'} elapsed={summary['elapsed']}s"
+    )
+    if summary["stopped_reason"]:
+        text += f" stopped={summary['stopped_reason']}"
+    _print(args, summary, text)
+    return FAIL if summary["needs_human"] else OK
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())

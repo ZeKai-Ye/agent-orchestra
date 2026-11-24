@@ -7,6 +7,22 @@ versioning: [SemVer](https://semver.org/).
 
 Nothing yet.
 
+## [0.4.0] - 2026-11-24
+
+### Added
+
+- `orchestra roadmap`: `list|check|add|triage|accept|promote` over `roadmap/items.jsonl`, with an
+  id scheme (`R-0000`), a status machine (`later/next/done/dropped`) and shape validation.
+- `roadmap accept` is the only path to `done`: it needs a merged task that names the item **and** the
+  item's own `accept` command to exit 0 (no self-graded Done).
+- Feasibility triage (`accept-runnable`, `scope-exists`, `scope-free`, weighted score) and promotion
+  limited to one `next` item at a time.
+- `orchestra research --rounds N --budget B --hours H`: accept the previous round, triage Later,
+  promote one, run exactly one loop round, record `roadmap/STATE.md`. Stops with `needs_human` rather
+  than guessing.
+- `task new --roadmap R-0000` so a task names the item it serves; tasks with an invalid id are refused.
+- docs/11 (round protocol), ADR 0008 (machine-owned queue), a seeded queue in this repository.
+- 80 tests (was 65), including 15 roadmap/round tests.
 ## [0.3.0] - 2026-11-24
 
 ### Added

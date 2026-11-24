@@ -158,6 +158,7 @@ class TaskLedger:
         deps: Iterable[str] = (),
         failure_signature: str = "",
         task_id: str | None = None,
+        roadmap: str | None = None,
     ) -> dict:
         if role not in ROLES:
             raise LedgerError(f"unknown role: {role} (expected one of {', '.join(ROLES)})")
@@ -179,6 +180,7 @@ class TaskLedger:
             "lineage": lineage,
             "owner": owner,
             "intent": intent or None,
+            "roadmap": roadmap or None,
             "state": "proposed",
             "paths": normalize_many(paths),
             "deps": sorted(set(deps)),
@@ -355,6 +357,9 @@ class TaskLedger:
             problems.append(f"invalid risk class: {risk.get('class')}")
         if task["state"] == "merged" and not task.get("intent"):
             problems.append("merged task must reference an intent")
+        roadmap_id = task.get("roadmap")
+        if roadmap_id is not None and not re.match(r"^R-\d{4}$", str(roadmap_id)):
+            problems.append(f"invalid roadmap id: {roadmap_id!r}")
         dead = task.get("dead")
         if dead is not None:
             if not isinstance(dead, list):
