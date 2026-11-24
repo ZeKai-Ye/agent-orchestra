@@ -175,3 +175,11 @@ python -m orchestra.cli --repo . loop --once --agent-cmd "python my_agent.py --b
 python -m orchestra.cli --repo . loop --max-rounds 10 --idle-sleep 30 --agent-cmd "python my_agent.py --brief {brief}"
 python -m orchestra.cli --repo . stop     # kill switch；下一轮不再领取任务
 ```
+
+## 会话报告（并发开发留痕）
+
+```powershell
+python -m orchestra.cli --repo . report --hours 8      # → reports/<UTC>-session.md
+```
+
+报告是给"人/评审 agent"看的：计数过的事实（门禁失败步骤、死路原因、准入拒绝、agent 退出码、耗时）+ 只在小样本够时才给出的信号 + 明说"看不到什么"。把它提交进项目，下一轮架构讨论就有证据而不是印象。细节见 [docs/15-session-report.md](docs/15-session-report.md)。

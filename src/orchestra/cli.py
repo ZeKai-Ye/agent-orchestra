@@ -464,6 +464,13 @@ def build_parser() -> argparse.ArgumentParser:
     trend.add_argument("--last", type=int, default=50)
     trend.add_argument("--out", default=None)
 
+    report_parser = add("report", cmd_report, "write one session report you can hand to a reviewer")
+    report_parser.add_argument("--since", default=None, help="ISO timestamp (UTC) or an hour count")
+    report_parser.add_argument("--hours", type=float, default=None)
+    report_parser.add_argument("--all", action="store_true", help="ignore the window, use the whole event log")
+    report_parser.add_argument("--out", default=None, help="output path (default reports/<utc>-session.md)")
+    report_parser.add_argument("--limit", type=int, default=20000)
+
     worktree = add("worktree", lambda ctx: USAGE, "worktree helpers")
     worktree_sub = worktree.add_subparsers(dest="sub", required=True)
     wt_create = worktree_sub.add_parser("create", help="git worktree + task brief for an agent")
@@ -1226,6 +1233,70 @@ def cmd_task_resume(ctx: Ctx) -> int:
     _print(args, {"task": moved["id"], "state": moved["state"], "lease": lease},
            f"{moved['id']} resumed by {args.holder} (attempt {moved['attempt']['used']}/{moved['attempt']['max']})")
     return OK
+
+
+
+def _report_since(ctx: Ctx, args) -> float:
+    """--since accepts an ISO timestamp or an hour count; default is the last day."""
+
+    from datetime import datetime, timezone
+
+    now = ctx.clock.now()
+    if getattr(args, "all", False):
+        return 0.0
+    if args.hours:
+        return now - float(args.hours) * 3600.0
+    if args.since:
+        text = str(args.since).strip()
+        try:
+            return now - float(text) * 3600.0
+        except ValueError:
+            pass
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise LedgerError(f"--since is neither an hour count nor an ISO timestamp: {text}") from exc
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.timestamp()
+    return now - 24 * 3600.0
+
+
+def cmd_report(ctx: Ctx) -> int:
+    from datetime import datetime, timezone
+
+    from . import report as report_module
+
+    args = ctx.args
+    now = ctx.clock.now()
+    since = _report_since(ctx, args)
+    facts = report_module.collect(ctx, since=since, until=now, limit=args.limit)
+    if args.out:
+        out = Path(args.out)
+    else:
+        stamp = datetime.fromtimestamp(now, timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        out = report_module.REPORT_DIR / f"{stamp}-session.md"
+    if not out.is_absolute():
+        out = ctx.repo / out
+    report_module.write(facts, out)
+    shown = out.relative_to(ctx.repo) if out.is_relative_to(ctx.repo) else out
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "path": str(shown),
+                    "since": facts["since"],
+                    "until": facts["until"],
+                    "counts": facts["counts"],
+                    "signals": report_module.signals(facts),
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+    else:
+        print(shown)
+    return 0
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())

@@ -124,6 +124,13 @@ def run_loop(
             summary["rounds"].append(record)
             summary["idle"] += 1
             idle_iterations += 1
+            ctx.store.event(
+                "admission.refused",
+                task_id=task.get("id"),
+                actor=holder,
+                reason=(exc.detail or {}).get("reason", "admission"),
+                detail=exc.detail or {},
+            )
             log(f"loop: admission refused ({exc.detail.get('reason', str(exc))}), backing off")
             time.sleep(idle_sleep)
             continue
@@ -154,6 +161,14 @@ def run_loop(
             for token in agent_command
         ]
         run = run_agent(argv, worktree=Path(prepared["worktree"]), timeout=timeout, env_extra=env_extra)
+        ctx.store.event(
+            "agent.finished",
+            task_id=task["id"],
+            actor=holder,
+            exit=run["exit"],
+            timed_out=run["timed_out"],
+            seconds=round(time.monotonic() - started, 2),
+        )
         record["agent_exit"] = run["exit"]
         if run["timed_out"] or run["exit"] != 0:
             reason = "out_of_time" if run["timed_out"] else "other"
@@ -205,4 +220,13 @@ def run_loop(
 
     summary["rounds_done"] = rounds_done
     summary["stopped"] = summary["stopped_reason"] is not None
+    ctx.store.event(
+        "loop.finished",
+        actor=holder,
+        rounds=rounds_done,
+        review=summary["review"],
+        failed=summary["failed"],
+        idle=summary["idle"],
+        stopped_reason=summary["stopped_reason"],
+    )
     return summary

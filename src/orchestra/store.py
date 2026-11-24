@@ -158,6 +158,22 @@ class Store:
             for row in rows
         ]
 
+    def events_since(self, since: float, limit: int = 20000) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM events WHERE at >= ? ORDER BY id ASC LIMIT ?", (since, limit)
+        ).fetchall()
+        return [
+            {
+                "at": row["at"],
+                "kind": row["kind"],
+                "task_id": row["task_id"],
+                "group_id": row["group_id"],
+                "actor": row["actor"],
+                "payload": json.loads(row["payload"]),
+            }
+            for row in rows
+        ]
+
     def count_events(self, kind: str, since: float) -> int:
         row = self.conn.execute(
             "SELECT COUNT(*) AS n FROM events WHERE kind = ? AND at >= ?", (kind, since)

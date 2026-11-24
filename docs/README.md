@@ -18,6 +18,7 @@ Read in this order. Each file answers one question, and no file tries to answer 
 | [12-join.md](12-join.md) | How does an outside researcher's agent start working from one pasted file? | protocol, matches code |
 | [13-disconnect.md](13-disconnect.md) | What happens when an agent loses its connection: suspend, resume, reassign, abandon? | design, matches code |
 | [14-local-fleet.md](14-local-fleet.md) | How do I run N local agents on my own project today? | runbook, commands verified on Windows |
+| [15-session-report.md](15-session-report.md) | How do I keep a session log I can hand to an architecture reviewer? | command, matches code |
 
 ## Rules
 

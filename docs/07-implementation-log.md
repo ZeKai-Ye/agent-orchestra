@@ -150,3 +150,19 @@ python -m unittest tests.test_gates -v
 - 端到端在临时仓库跑通：`task new → loop --once → claim → worktree → agent_run.py → opencode (156 s) → commit a8657c7 → impl 门判定`。门禁因临时仓库缺 `docs/intents/` 而失败并回退任务——门在起作用，不是接线错误。
 - 踩到并修掉的坑：`local-fleet.ps1` 曾把 `PYTHONPATH` 指向**目标仓库**的 `src`（而不是 orchestra 自己的 `src`），子进程因此 `ModuleNotFoundError`。目标仓库不是 orchestra 源码树，这个错对真实用法是必现的。
 - 已知限制：后台子进程被父会话回收时任务停在 `in_progress`（靠 TTL + `lease reap` 或 `task resume` 收尾）；后台 Python 的 stdout 是块缓冲，强杀时日志为空——这两条都写进了 `docs/14` 的故障表。
+
+## v0.5.3 增补（会话报告：并发开发留痕）
+
+新增 `orchestra report`（`src/orchestra/report.py` + `cli.py` 子命令 + `store.events_since`）：把账簿、事件表、配置聚成一份 Markdown（默认 `reports/<UTC>-session.md`）。
+
+- 七节固定结构：配置 / 数字 / 失败归因（门禁步骤、死路、准入、agent 退出）/ 任务账簿 / 时间线 / 信号 / 缺口。
+- 信号有门槛：样本 < 3 不给结论；每条信号自带推导它的数字。**这条规则是刻意的**，小样本归因比不归因更糟。
+- 新增三种事件，否则报告无话可说：`agent.finished`（exit/timed_out/seconds）、`admission.refused`（reason/detail）、`loop.finished`（rounds/review/failed/idle）。
+- `--all` 的窗口从**第一条事件**算起（实测踩坑：初版输出 `1970-01-01 → now（498752 小时）`）。
+
+**实测**：
+
+- 在本仓库（v0.1 起的真实历史）生成成功，55 条事件、12 个任务；信号输出 `门禁失败 13/20 次…最高频失败步骤是 impl:scope（5 次）`——与 `T-0001` 的两条 `scope_violation` 死路记录一致。
+- 在临时仓库跑一轮真实 agent（opencode 退出 1）后，报告正确记下 `exit 1` 一次并聚合进信号。
+- 5 个新测试（`tests/test_report.py`）：计数、信号门槛、空窗口明说、真实账簿出文件、非法 `--since` 退出码 1。
+- 期间修掉的坑：`cmd_report` 追加在 `if __name__ == "__main__"` 之后导致 `NameError`——`__main__` 守卫必须留在文件末尾。
