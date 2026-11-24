@@ -755,6 +755,7 @@ def build_parser() -> argparse.ArgumentParser:
     loop.add_argument("--agent-env", nargs="*", default=None, help="KEY=VALUE pairs passed to the agent")
     loop.add_argument("--holder", default="loop")
     loop.add_argument("--timeout", type=float, default=1800.0)
+    loop.add_argument("--heartbeat", type=float, default=0.0, help="lease renewal interval in seconds (0 = auto: ttl/3, at most 60)")
 
     stop = add("stop", cmd_stop, "write the kill-switch file so a loop stops after this round")
     stop.add_argument("--file", default=None)
@@ -869,12 +870,15 @@ def cmd_loop(ctx: Ctx) -> int:
         env_extra=_agent_env(args.agent_env),
         holder=args.holder,
         timeout=args.timeout,
+        heartbeat=args.heartbeat,
         log=(lambda message: None) if args.json else print,
     )
     text = (
         f"rounds={summary['rounds_done']} review={summary['review']} "
         f"failed={summary['failed']} idle={summary['idle']}"
     )
+    if summary.get("lease_lost"):
+        text += f" lease_lost={summary['lease_lost']}"
     if summary["stopped_reason"]:
         text += f" stopped={summary['stopped_reason']}"
     _print(args, summary, text)

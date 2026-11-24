@@ -10,7 +10,9 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import sqlite3
 import subprocess
+import threading
 from pathlib import Path
 
 from .gates import GateError, git, resolve_base
@@ -278,3 +280,56 @@ def return_task(ctx, task_id: str, holder: str, reason: str, note: str = "") -> 
         if current["attempt"]["used"] >= current["attempt"]["max"]:
             return escalate_task(ctx, task_id, holder, f"{reason} (attempt budget exhausted)")
     return ctx.ledger.transition(task_id, "proposed", actor=holder, note=f"returned: {reason}")
+
+
+class LeaseHeartbeat:
+    """Renew a lease while a slow agent runs, and notice when it is no longer ours.
+
+    The loop blocks on one agent for minutes and the lease TTL is minutes too.
+    Without renewal a round can outlive its own lease, get reaped, and have the
+    task handed to someone else while this worker keeps writing the same paths.
+    One thread, one connection: sqlite3 objects must not cross threads.
+    """
+
+    def __init__(self, ctx, group: str, holder: str, interval: float) -> None:
+        self.db_path = ctx.store.db_path
+        self.clock = ctx.clock
+        self.config = ctx.config
+        self.group = group
+        self.holder = holder
+        self.interval = max(0.2, float(interval))
+        self.lost = False
+        self.renewals = 0
+        self.transient_errors = 0
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True, name="lease-heartbeat")
+
+    def start(self) -> "LeaseHeartbeat":
+        self._thread.start()
+        return self
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread.is_alive():
+            self._thread.join(timeout=5.0)
+
+    def _run(self) -> None:
+        from .leases import LeaseError, LeaseManager
+        from .store import Store
+
+        store = Store(self.db_path, self.clock)
+        try:
+            leases = LeaseManager(store=store, clock=self.clock, config=self.config)
+            while not self._stop.wait(self.interval):
+                try:
+                    leases.renew(self.group, holder=self.holder)
+                    self.renewals += 1
+                except LeaseError:
+                    # the lease was reaped or handed to someone else: we are out
+                    self.lost = True
+                    return
+                except sqlite3.Error:
+                    # a busy database is not a lost lease; try again next tick
+                    self.transient_errors += 1
+        finally:
+            store.close()

@@ -166,3 +166,22 @@ python -m unittest tests.test_gates -v
 - 在临时仓库跑一轮真实 agent（opencode 退出 1）后，报告正确记下 `exit 1` 一次并聚合进信号。
 - 5 个新测试（`tests/test_report.py`）：计数、信号门槛、空窗口明说、真实账簿出文件、非法 `--since` 退出码 1。
 - 期间修掉的坑：`cmd_report` 追加在 `if __name__ == "__main__"` 之后导致 `NameError`——`__main__` 守卫必须留在文件末尾。
+
+## v0.5.4 增补（loop 轮内续约）
+
+**问题**：`loop` 在 agent 跑的那一整轮里从不续约（grep `renew`/`heartbeat` 在 loop.py 里一处都没有），而 agent 默认 `--timeout` 也是 1800s、租约 TTL 也是 1800s。一轮超过 TTL 时自己的租约会先过期，被别的 worker `reap` 收走后任务易主，而原 worker 还在往同一个 worktree 里写。
+
+**做法**（`runner.LeaseHeartbeat` + `loop.run_loop`）：
+
+- 心跳线程每 `interval` 秒调一次 `leases.renew(group, holder=holder)`；`interval` 由 `--heartbeat` 指定，默认 `ttl/3`，夹在 [1, 60] 秒。
+- 线程用自己的 `Store`（自己开 sqlite 连接）：**sqlite3 连接不能跨线程**，共享会直接抛 `ProgrammingError`。
+- `renew` 抛 `LeaseError`（组不存在 = 被 reap；holder 不匹配 = 被抢）→ 置 `lost=True` 并停止续约。`sqlite3.Error` 只记 `transient_errors`，因为数据库忙不等于租约丢了。
+- agent 返回后、门禁跑完后各检查一次 `lost`：命中就 `_abandon_lost_lease()`——写 `lease.lost` 事件、重置 worktree、**完全不动账簿**（任务已经属于别人），本轮 `outcome=lease_lost`、计入 `summary["lease_lost"]`，然后继续下一轮。
+- `--heartbeat 0`（默认）＝自动；`loop --json` 摘要里出现 `lease_lost` 计数，纯文本输出非零时追加 `lease_lost=N`。
+
+**为什么不把租约 TTL 直接调大**：TTL 是"掉线多久才算掉线"的判定窗口，调大等于把误判窗口一起调大。续约修的是"活着的人被判定掉线"，不该用它掩盖"死了的人还占着"。
+
+**测试**（`tests/test_heartbeat.py`，真时钟）：
+
+- 慢 agent（sleep 1.2s，`--heartbeat 0.3`）：`lease.renewed` ≥ 1、`lease.expired` = 0、`lease_lost` = 0 → 说明续约真的在发生。
+- 被抢：agent 自己用独立连接 `UPDATE leases SET holder='intruder'` 再 sleep 1.5s → `lease_lost = 1`、`outcome=lease_lost`、任务没进 `review`、`gate.passed` = 0 → 说明丢租约就真停手，不是只记一笔日志。

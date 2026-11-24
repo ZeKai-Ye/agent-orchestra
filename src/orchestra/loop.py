@@ -15,6 +15,7 @@ from .leases import LeaseConflict
 from .ledger import LedgerError
 from .policy import AdmissionError
 from .runner import (
+    LeaseHeartbeat,
     append_snapshot,
     claim_task,
     create_worktree,
@@ -58,6 +59,7 @@ def run_loop(
     env_extra: dict | None = None,
     holder: str = "loop",
     timeout: float = 1800.0,
+    heartbeat: float = 0.0,
     log=print,
 ) -> dict:
     stop = _stop_path(ctx, stop_file)
@@ -68,6 +70,7 @@ def run_loop(
         "failed": 0,
         "idle": 0,
         "reaped": [],
+        "lease_lost": 0,
     }
     rounds_done = 0
     idle_iterations = 0
@@ -160,6 +163,9 @@ def run_loop(
             .replace("{task}", task["id"])
             for token in agent_command
         ]
+        ttl = ctx.config.lease_ttl("write") if ctx.config else 1800
+        interval = heartbeat if heartbeat > 0 else max(1.0, min(60.0, ttl / 3.0))
+        monitor = LeaseHeartbeat(ctx, claim["lease"]["group"], holder, interval).start()
         run = run_agent(argv, worktree=Path(prepared["worktree"]), timeout=timeout, env_extra=env_extra)
         ctx.store.event(
             "agent.finished",
@@ -170,6 +176,11 @@ def run_loop(
             seconds=round(time.monotonic() - started, 2),
         )
         record["agent_exit"] = run["exit"]
+        if monitor.lost:
+            monitor.stop()
+            _abandon_lost_lease(ctx, task, prepared, record, summary, holder, started, log)
+            rounds_done += 1
+            continue
         if run["timed_out"] or run["exit"] != 0:
             reason = "out_of_time" if run["timed_out"] else "other"
             state = return_task(ctx, task["id"], holder, reason, note=f"agent exit {run['exit']}")
@@ -197,6 +208,11 @@ def run_loop(
         failed = [step["name"] for step in gate["steps"] if not step["ok"]]
         record["gate_ok"] = gate["ok"]
         record["failed_steps"] = failed
+        monitor.stop()
+        if monitor.lost:
+            _abandon_lost_lease(ctx, task, prepared, record, summary, holder, started, log)
+            rounds_done += 1
+            continue
         if gate["ok"]:
             moved = ctx.ledger.transition(task["id"], "review", actor=holder, note="gate passed")
             record["outcome"] = "review"
@@ -230,3 +246,21 @@ def run_loop(
         stopped_reason=summary["stopped_reason"],
     )
     return summary
+
+
+def _abandon_lost_lease(ctx, task, prepared, record, summary, holder, started, log) -> None:
+    """The lease is gone: reset the worktree and leave the ledger to its new owner."""
+
+    ctx.store.event(
+        "lease.lost",
+        task_id=task["id"],
+        actor=holder,
+        worktree=str(prepared["worktree"]),
+    )
+    reset_worktree(Path(prepared["worktree"]))
+    record["outcome"] = "lease_lost"
+    record["state"] = ctx.ledger.load(task["id"]).get("state")
+    record["seconds"] = round(time.monotonic() - started, 2)
+    summary["rounds"].append(record)
+    summary["lease_lost"] += 1
+    log(f"loop: {task['id']} lease lost mid-round; worktree reset, ledger left alone")

@@ -78,3 +78,18 @@ python -m orchestra.cli --repo . resume
 
 - **值得**：`dead_approaches` 在多数任务上非空（说明循环真的在自我纠正），且 `review/rounds_done` 稳定在 1 以上。
 - **该停**：某任务反复 `scope_violation` 且 dead 已经不涨（说明 brief 没被读，或 agent 不收敛），或 `budget_exceeded` 成为主要失败原因（说明封套配错，不是 agent 的问题）。
+
+## 轮内续约（v0.5.4）
+
+一轮的时间轴是：`claim → worktree → **agent（分钟级）** → gate（分钟级）→ review/return`。
+
+租约 TTL 默认 1800 秒，agent 的 `--timeout` 默认也是 1800 秒——两者撞在一条线上。所以在 v0.5.3 之前，**一轮只要跑得比 TTL 长，worker 自己的租约就会先过期**，被别的 worker `reap` 收走、任务易主，而原 worker 还在往同一个 worktree 写。
+
+v0.5.4 起，`loop` 在 agent + gate 期间跑一个心跳线程续约，并在 agent 返回后、门禁结束后各检查一次：
+
+- 续约成功 → 这一轮继续，TTL 不再是轮次时长的天花板。
+- 续约失败（`LeaseError`：租约被 reap，或 holder 已经不是自己）→ 判定"任务被抢"，写 `lease.lost` 事件、重置 worktree、**不动账簿**（它已经属于别人），本轮记为 `outcome=lease_lost`。
+
+`--heartbeat <秒>` 可调间隔（默认 0 = 自动 `ttl/3`，夹在 [1, 60]）。`--timeout` 仍然管"单个 agent 最多跑多久"，两者职责不同：timeout 是给 agent 的预算，heartbeat 是自己租约的保鲜。
+
+注意它**不解决**"死掉的 worker 还占着租约"——那是 TTL + `reap` 的职责，判定窗口仍然是 TTL。两个机制必须同时存在：续约防误判活着的人，TTL 防死了的人赖着不走。
