@@ -149,6 +149,9 @@ $env:PYTHONPATH = "$PWD\src"; python -m unittest discover -s tests -t . -v
 
 开发中（骨架 + 方案）。技术栈：Python 3.12 / SQLite(WAL) / git worktree / PowerShell 脚本。
 
+## 交付包
+
+`release/agent-orchestra-0.5.0/`（及同名 `.zip`）是可直接拿到别的项目用的交付物：自带引擎、101 个测试、`bootstrap.ps1`（装进目标仓库）与交付版 README（接入步骤、命令速查、退出码、七条不变量、边界与升级路径）。
 ## License
 
 MIT，见 [LICENSE](LICENSE)。

@@ -1,0 +1,19 @@
+{
+  "repo": "agent-orchestra",
+  "coordination": "git-refs",
+  "claim_ref": "refs/claims/{task}",
+  "claim_ttl_seconds": 1800,
+  "beat_seconds": 600,
+  "handles_dir": "handles",
+  "handle_key_file": "handles/{handle}.pub",
+  "commands": {
+    "list": "python -m orchestra.cli --repo . task list --state proposed",
+    "claim": "python -m orchestra.cli --repo . claim --task {task} --handle {handle} --sign-key {key}",
+    "beat": "python -m orchestra.cli --repo . beat --task {task} --handle {handle} --sign-key {key}",
+    "release": "python -m orchestra.cli --repo . release --task {task} --handle {handle} --reason {reason}",
+    "gate": "python -m orchestra.cli --repo . gate run --task {task} --stage impl"
+  },
+  "exit_codes": {"0": "pass", "1": "refused", "3": "claim conflict", "4": "needs human token", "5": "admission refused", "6": "infrastructure fault"},
+  "limits": {"claims_per_handle": 2},
+  "env": {"PYTHONPATH": "src"}
+}
