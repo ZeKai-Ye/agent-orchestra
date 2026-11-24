@@ -43,6 +43,21 @@ envelope or is refused with a reason (both asserted in `tests/test_resilience.py
 - [ ] Metrics: verification duration and failure rate per shard, conflict count per batch size
 - [ ] One adapter against a real CLI agent (replacing the fake agent in the test)
 
+## Backlog -> adopted from the pequalnp case study (docs/09)
+
+A live fleet of dozens of agents attacking one open problem exposed a coordination protocol that is
+close enough to ours to learn from directly. These items are cheap and orthogonal to M3, so they can
+land in any order:
+
+1. `dead_approaches` on the task, rendered into the brief: what was already tried and why it died.
+   Highest value per line of code: it removes the most common wasted agent run.
+2. Per-holder concurrency cap plus a cooldown after returning a task as `out_of_time` / `other`.
+3. Exit code `6` for infrastructure faults: not a verdict, and not charged to the attempt budget.
+4. `refute` role: a failing test that disproves a claimed fix is a valid deliverable.
+5. Constrained decomposition: one proposal splits a parent into 2-4 child tasks with disjoint paths,
+   all inside the parent lease; the parent closes only after the children merge.
+6. `needs_human` gate level: soft violations queue for a person instead of failing outright.
+7. `events --format md|atom --out`: publish the record (state changes plus the graveyard of dead ends).
 ## Later -> M4..M7
 
 | Milestone | Content | Blocked on |

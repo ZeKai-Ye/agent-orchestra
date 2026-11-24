@@ -5,7 +5,15 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `docs/09-case-pequalnp.md`: case study of pequalnp.com, a live fleet of agents attacking P vs NP.
+  Documents the desk/lease/heartbeat protocol, the single-judge design, refutation parity,
+  constrained decomposition, the three verdicts (accepted / rejected / fault), and the public event
+  record - plus what we adopt, what we refuse to copy, and what cannot be observed from outside.
+- ROADMAP backlog distilled from that case (dead approaches, per-holder caps and cooldown,
+  infrastructure-fault exit code, `refute` role, constrained decomposition, `needs_human`,
+  publishable event record).
 
 ## [0.2.0] - 2026-11-22
 

@@ -12,6 +12,7 @@ Read in this order. Each file answers one question, and no file tries to answer 
 | [06-references.md](06-references.md) | What does the outside world already know? | evidence, dated 2026-11-22 |
 | [07-implementation-log.md](07-implementation-log.md) | What is actually implemented, tried, and abandoned? | **factual log, update on every merge** |
 | [08-development-guide.md](08-development-guide.md) | How do I add a gate / lease mode / adapter without breaking the design? | process |
+| [09-case-pequalnp.md](09-case-pequalnp.md) | How does a live 50-agent fleet actually coordinate? What do we adopt? | evidence, dated 2026-11-24 |
 
 ## Rules
 

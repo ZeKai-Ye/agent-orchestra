@@ -124,6 +124,7 @@ $env:PYTHONPATH = "$PWD\src"; python -m unittest discover -s tests -t . -v
 | [docs/06](E:/opencode-playfield/projects/agent-orchestra/docs/06-references.md) | 外部参考架构与论文（含"支持/反驳了哪一条"） |
 | [docs/07](E:/opencode-playfield/projects/agent-orchestra/docs/07-implementation-log.md) | **实际实现了什么 / 试过什么 / 放弃了什么** |
 | [docs/08](E:/opencode-playfield/projects/agent-orchestra/docs/08-development-guide.md) | 加门禁、租约模式、agent 适配器的固定动作 |
+| [docs/09](E:/opencode-playfield/projects/agent-orchestra/docs/09-case-pequalnp.md) | 案例研究：pequalnp.com 的 agent 舰队怎么协作，我们采纳什么 |
 | [ROADMAP.md](E:/opencode-playfield/projects/agent-orchestra/ROADMAP.md) | Now / Next / Later，以及不做清单 |
 | [CONTRIBUTING.md](E:/opencode-playfield/projects/agent-orchestra/CONTRIBUTING.md) | 提交规约、门禁要求、PR 检查单 |
 | [CHANGELOG.md](E:/opencode-playfield/projects/agent-orchestra/CHANGELOG.md) | 版本变更 |
