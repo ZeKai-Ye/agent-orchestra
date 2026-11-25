@@ -56,7 +56,7 @@ class JoinTests(unittest.TestCase):
         (self.alice / "ledger" / "intents" / "I-0001.md").write_text("---\nsigned: true\n---\n", encoding="utf-8")
         self.task = json.loads(
             cli(self.alice, "task", "new", "--title", "fix the app", "--paths", "src/core",
-                "--intent", "I-0001", "--json", expect=0).stdout
+                "--intent", "I-0001", "--acceptance", "A1|judge|the app works|", "--json", expect=0).stdout
         )
         self.alice_key = self.keypair("alice")
         self.bob_key = self.keypair("bob")

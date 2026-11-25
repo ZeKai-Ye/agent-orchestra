@@ -18,8 +18,16 @@ from typing import Any, Iterable
 from .clock import Clock
 from .fslock import advisory_lock
 from .paths import normalize_many
+from .acceptance import (
+    CLASSES as ACCEPTANCE_CLASSES,
+    ID_PATTERN as ACCEPTANCE_ID,
+    AcceptanceError,
+    digest as acceptance_digest,
+    parse as parse_acceptance,
+)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+ACCEPTED_SCHEMA_VERSIONS = (1, 2)
 ROLES = ("patch", "refactor", "test", "verify", "research", "coordinate", "critic")
 RISK_CLASSES = ("T0", "T1", "T2")
 DEAD_REASONS = (
@@ -162,6 +170,7 @@ class TaskLedger:
         task_id: str | None = None,
         roadmap: str | None = None,
         target: str | None = None,
+        acceptance: Iterable[str] = (),
     ) -> dict:
         if role not in ROLES:
             raise LedgerError(f"unknown role: {role} (expected one of {', '.join(ROLES)})")
@@ -173,6 +182,10 @@ class TaskLedger:
             raise LedgerError(f"invalid task id: {tid}")
         if self.task_path(tid).exists():
             raise LedgerError(f"task already exists: {tid}")
+        try:
+            criteria = parse_acceptance(acceptance)
+        except AcceptanceError as exc:
+            raise LedgerError(f"acceptance: {exc}") from exc
         now = self.clock.iso()
         task = {
             "schema_version": SCHEMA_VERSION,
@@ -188,6 +201,8 @@ class TaskLedger:
             "state": "proposed",
             "paths": normalize_many(paths),
             "deps": sorted(set(deps)),
+            "acceptance": criteria,
+            "acceptance_digest": acceptance_digest(criteria),
             "fingerprint": compute_fingerprint(paths, failure_signature),
             "failure_signature": failure_signature.strip(),
             "attempt": {"used": 0, "max": int(max_attempts)},
@@ -396,7 +411,7 @@ class TaskLedger:
                 problems.append(f"missing field: {key}")
         if problems:
             return problems
-        if task["schema_version"] != SCHEMA_VERSION:
+        if task["schema_version"] not in ACCEPTED_SCHEMA_VERSIONS:
             problems.append(f"unsupported schema_version: {task['schema_version']}")
         if not ID_PATTERN.match(str(task["id"])):
             problems.append(f"invalid id: {task['id']}")
@@ -419,6 +434,30 @@ class TaskLedger:
         target = task.get("target")
         if target is not None and not re.match(r"^[TR]-\d{4}$", str(target)):
             problems.append(f"invalid target: {target!r} (expected T-0000 or R-0000)")
+        criteria = task.get("acceptance")
+        if criteria is not None:
+            if not isinstance(criteria, list):
+                problems.append("acceptance must be a list")
+            else:
+                seen_criteria: set[str] = set()
+                for entry in criteria:
+                    if not isinstance(entry, dict) or not {"id", "class", "criterion"} <= set(entry):
+                        problems.append(f"malformed acceptance entry: {entry!r}")
+                        continue
+                    if not ACCEPTANCE_ID.match(str(entry["id"])):
+                        problems.append(f"invalid acceptance id: {entry['id']!r} (expected A1)")
+                    if entry["class"] not in ACCEPTANCE_CLASSES:
+                        problems.append(
+                            f"acceptance {entry['id']} has class {entry['class']!r}, expected check or judge"
+                        )
+                    if entry["id"] in seen_criteria:
+                        problems.append(f"duplicate acceptance id: {entry['id']}")
+                    seen_criteria.add(entry["id"])
+                recorded = task.get("acceptance_digest")
+                if recorded and recorded != acceptance_digest(criteria):
+                    problems.append(
+                        "acceptance_digest does not match the criteria: they were edited after creation"
+                    )
         roadmap_id = task.get("roadmap")
         if roadmap_id is not None and not re.match(r"^R-\d{4}$", str(roadmap_id)):
             problems.append(f"invalid roadmap id: {roadmap_id!r}")

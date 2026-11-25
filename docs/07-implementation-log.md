@@ -209,3 +209,31 @@ python -m unittest tests.test_gates -v
 | `-Model auto -DryRun` | 警告 + `model: (agent default)`，argv 里不带 `-m` |
 
 **顺带纠正一个错误结论**：上一版文档写"本机没有 `anthropic/*`"。实测同一台机器相邻两次 `opencode models` 分别返回 **81** 和 **96** 个模型，provider 组成也不同（`anthropic/*` 出现过）。这个目录是动态的，任何写死的数字或"有没有某 provider"的断言都会过期，已改为"以命令输出为准"。
+
+## v0.6.0 增补（验收标准成为任务的字段：L1 + L2）
+
+**问题（用户实录）**：多 agent 并发开发后质量验收不成立——**执行方和评审方都不知道验收标准是什么**。追下去发现标准本来存在，只是在交接处丢了：`roadmap/items.jsonl` 每条都有 `accept`，`triage` 还会检查 `accept-runnable`，但 `promote_item()` 调 `ledger.create()` 时**没传**，任务、brief、评审三方全看不到。
+
+**做法**（本轮做 L1 + L2，L3/L4 见 `docs/03` 7.4）：
+
+- 新模块 `src/orchestra/acceptance.py`：解析 `A1|check|<命令>|<备注>` / `A1|judge|<要求>|<备注>`（可省 id、可省备注、裸字符串= check 命令），算 `acceptance_digest`，渲染成 brief/prompt 用的文本。只分 `check`（命令判定）与 `judge`（人/critic 判定）两类——不属于任何一类的要求不是标准。
+- `ledger`：`_create(acceptance=...)` 解析并存储 `acceptance` + `acceptance_digest`；`validate()` 重算摘要，**改过标准即 `acceptance_digest does not match the criteria`**，门禁的 `ledger` 步骤直接失败。`SCHEMA_VERSION` 1→2，`ACCEPTED_SCHEMA_VERSIONS=(1,2)` 让 12 个历史任务继续可读。
+- `cli task new`：`--acceptance`（可重复）必填，否则 exit 1；`--no-acceptance` 是显式弃权；输出行加 `criteria=N`。
+- `roadmap.promote_item`：把 `accept` 转成 `A1|check|<accept>|<标题>`；条目没有 accept 就拒绝 promote（不再产生"没人能评审"的任务）。
+- `runner.create_worktree`：brief 增加 `acceptance` 与 `acceptance_digest`。
+- `scripts/agent_run.py`：prompt 增加 "Acceptance criteria" 段与第 7 条规则——`check` 要跑、`judge` 要用 file:line 论证，证据写进 `notes/<task>.md`。
+
+**实测**（`acc-smoke` 临时仓库 + 6 个新测试）：
+
+| 检查 | 结果 |
+|---|---|
+| `task new` 不带 `--acceptance` | exit 1，提示写明"nobody wrote down" |
+| 带两条标准创建 | `schema_version=2`、`A1/A2` 解析正确、`acceptance_digest=sha256:...` |
+| `loop --once` 后读 brief | `acceptance` 与 `acceptance_digest` 均在 |
+| `agent_run.py --print-prompt` | 出现 "Acceptance criteria"、`A1 [judge] …`、`notes/T-0001.md` |
+| 手改任务里的 criterion 再跑门禁 | `FAIL ledger acceptance_digest does not match the criteria`，exit 1 |
+| `roadmap promote` | 任务的 A1 是 `check`，命令来自条目的 `accept` |
+
+全量 121 个测试通过。
+
+**已知边界**：`check` 类条目还没有进 gate 自动执行（L3）；评审仍是单条 verdict（L4）；`critic.py` 直接创建的 critic 任务没有 acceptance。这三条都写在 `docs/03` 7.4，不装作已完成。

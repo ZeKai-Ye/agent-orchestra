@@ -226,6 +226,12 @@ def promote_item(ctx, item_id: str, *, intent: str | None = None, role: str = "p
         raise RoadmapError(
             f"{item_id} is not feasible yet ({feasibility['score']}): " + "; ".join(feasibility["notes"])
         )
+    if item.get("accept"):
+        criteria = [f"A1|check|{item['accept']}|{item['title']}"]
+    else:
+        raise RoadmapError(
+            f"{item_id} has no accept criterion; promoting it would create a task nobody can review"
+        )
     task = ctx.ledger.create(
         title=f"{item_id}: {item['title']}",
         role=role,
@@ -235,6 +241,7 @@ def promote_item(ctx, item_id: str, *, intent: str | None = None, role: str = "p
         intent=intent,
         max_attempts=3,
         roadmap=item_id,
+        acceptance=criteria,
     )
     updated = set_status(ctx.repo, item_id, "next", promoted_at=ctx.clock.iso(), task=task["id"],
                          feasibility=feasibility)

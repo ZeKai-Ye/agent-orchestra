@@ -26,9 +26,12 @@
   "paths": [
     "reviews"
   ],
-  "revision": 1,
+  "revision": 2,
   "risk": {
+    "blast_radius": 13,
+    "changed_files": 13,
     "class": "T0",
+    "digest": "sha256:c54ba5490c4b408061610f8799332a761cf7fb3f0bd23daf055d4ae7722f0aab",
     "reasons": [],
     "signals": []
   },

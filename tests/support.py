@@ -94,11 +94,12 @@ class RepoCase(unittest.TestCase):
         return intent_id
 
     def make_task(self, paths=None, intent: str | None = "I-0001", **kwargs) -> dict:
+        title = kwargs.pop("title", "fix a bug")
         args = [
             "task",
             "new",
             "--title",
-            kwargs.pop("title", "fix a bug"),
+            title,
             "--role",
             kwargs.pop("role", "patch"),
             "--lineage",
@@ -108,6 +109,12 @@ class RepoCase(unittest.TestCase):
         ]
         if intent:
             args += ["--intent", intent]
+        acceptance = kwargs.pop("acceptance", None)
+        if kwargs.pop("no_acceptance", False):
+            args += ["--no-acceptance"]
+        else:
+            for criterion in acceptance or [f"A1|judge|{title} behaves as described|"]:
+                args += ["--acceptance", criterion]
         for key, value in kwargs.items():
             args += [f"--{key.replace('_', '-')}", value]
         out = cli(self.repo, *args, "--json", expect=0).stdout

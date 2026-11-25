@@ -31,7 +31,8 @@ class RoadmapCase(RepoCase):
     def merged_task(self, roadmap_id: str, paths=("src/core",)) -> dict:
         task = json.loads(
             cli(self.repo, "task", "new", "--title", f"{roadmap_id} work", "--paths", *paths,
-                "--intent", "I-0001", "--roadmap", roadmap_id, "--json", expect=0).stdout
+                "--intent", "I-0001", "--roadmap", roadmap_id,
+                "--acceptance", "A1|judge|the roadmap item is addressed|", "--json", expect=0).stdout
         )
         cli(self.repo, "task", "claim", "--task", task["id"], "--holder", "agent-1", expect=0)
         for state in ("in_progress", "review", "approved", "merged"):

@@ -195,6 +195,8 @@ def create_worktree(ctx, task: dict) -> dict:
         "worktree": str(worktree),
         "lease_paths": task["paths"],
         "dead_approaches": task.get("dead", []),
+        "acceptance": task.get("acceptance") or [],
+        "acceptance_digest": task.get("acceptance_digest"),
         "gates": {
             "impl": ctx.config.gate_commands("impl") if ctx.config else [],
             "merge": ctx.config.gate_commands("merge") if ctx.config else [],

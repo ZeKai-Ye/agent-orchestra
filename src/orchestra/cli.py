@@ -147,6 +147,11 @@ def cmd_worktree_create(ctx: Ctx) -> int:
 
 def cmd_task_new(ctx: Ctx) -> int:
     args = ctx.args
+    if not args.acceptance and not args.no_acceptance:
+        raise LedgerError(
+            "task new needs at least one --acceptance criterion, or --no-acceptance to declare "
+            "there is none. Quality cannot be accepted against a standard nobody wrote down."
+        )
     task = ctx.ledger.create(
         title=args.title,
         role=args.role,
@@ -161,8 +166,13 @@ def cmd_task_new(ctx: Ctx) -> int:
         task_id=args.id,
         roadmap=args.roadmap,
         target=args.target,
+        acceptance=args.acceptance or (),
     )
-    _print(args, task, f"{task['id']}\t{task['role']}\t{','.join(task['paths'])}")
+    _print(
+        args,
+        task,
+        f"{task['id']}\t{task['role']}\t{','.join(task['paths'])}\tcriteria={len(task.get('acceptance') or [])}",
+    )
     return OK
 
 
@@ -495,6 +505,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--roadmap", default=None)
     p.add_argument("--target", default=None, help="the task or roadmap item this task is about")
     p.add_argument("--id", default=None)
+    p.add_argument(
+        "--acceptance",
+        action="append",
+        default=None,
+        metavar="ID|CLASS|CRITERION[|NOTE]",
+        help="acceptance criterion, repeatable. class=check (a command decides) or judge "
+        "(a person or critic decides from evidence). A bare string means 'check <command>'.",
+    )
+    p.add_argument(
+        "--no-acceptance",
+        action="store_true",
+        help="declare that this task has no acceptance criteria (not recommended)",
+    )
     p.set_defaults(handler=cmd_task_new)
 
     p = task_sub.add_parser("list", help="list task books")

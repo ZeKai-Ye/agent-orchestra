@@ -128,3 +128,48 @@ acquire(task, holder, paths, mode, ttl, token?):
 - 交接物 = 提交 + 门禁结果 + 账簿 history。**对话不是交接物。**
 - 跨域改动只能通过契约变更（`contracts/` 版本化 + ADR），不允许 agent 之间私下协商。
 - 人签不是"看一遍点确定"：令牌里必须带 `prediction`（可证伪预测）与 `rollback`（回滚方案），两者为空则 `issue` 直接拒绝。
+
+## 7. 验收标准（acceptance，v0.6.0 起）
+
+任务从"标题 + 路径"变成"标题 + 路径 + **验收标准**"，因为质量的判定标准必须和执行任务一起冻结，否则执行方和评审方各按自己的理解走。
+
+### 7.1 字段
+
+```json
+"acceptance": [
+  {"id": "A1", "class": "check", "criterion": "python -m unittest tests.test_gate -k scope", "note": "scope gate rejects escapes"},
+  {"id": "A2", "class": "judge", "criterion": "the error names file and line", "note": "reviewer reads the diff"}
+],
+"acceptance_digest": "sha256:9f1abbd2..."
+```
+
+只有两类，因为它们需要的机制不同：
+
+| class | 谁判定 | 系统能做什么 |
+|---|---|---|
+| `check` | 一条命令 | 执行前跑、门禁跑、评审复跑——不需要相信任何人的文字 |
+| `judge` | 人或 critic | 只能要求"证据被声明过"，永远无法验证证据为真 |
+
+两类都不属于的要求不是标准，是愿望。任务没有标准 = 质量未定义，这是系统要明确指出的事。
+
+### 7.2 冻结
+
+`acceptance_digest` 在创建时由标准内容哈希得出，并写进任务文件与 brief。`TaskLedger.validate()` 每次加载任务都重算一次：
+
+```
+acceptance_digest does not match the criteria: they were edited after creation
+```
+
+→ 门禁的 `ledger` 步骤失败。**改标准的唯一途径是新建任务**，因为"改标准让它通过"是验收系统最常见的作弊路径。
+
+### 7.3 投影
+
+- `.orchestra/briefs/<task>.json` 带 `acceptance` 与 `acceptance_digest`；
+- agent 的 prompt 里逐条列出，并要求把证据写进 `notes/<task>.md`（`check` 写命令与退出码，`judge` 写 file:line 理由）；
+- `roadmap/items.jsonl` 的 `accept` 字符串在 `promote` 时转成 `A1|check|<accept 命令>|<标题>`；条目没有 `accept` 就不允许 promote。
+
+### 7.4 还没做的（v0.6.0 的边界）
+
+- 门禁尚未执行 `check` 类条目（L3）；现在只是把它们交给 agent 自验。
+- 评审尚未逐条判定（L4）：`parse_verdict` 仍然是一条 verdict 判整单。
+- critic / research 任务由 `critic.py` 直接创建，暂时没有 acceptance（它们的"验收"是产出物本身）。
