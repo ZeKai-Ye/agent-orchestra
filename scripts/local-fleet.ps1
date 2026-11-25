@@ -13,17 +13,26 @@
     supervisor then runs the impl gate; a passing round lands in `review`, never
     in `main`.
 
+    MODEL IS REQUIRED. A fleet never starts on an implicit default: without
+    -Model (or an explicit -Model auto) this script refuses and lists what is
+    available. The chosen model is recorded in .orchestra/fleet.json and shown by
+    -Status, so "which model is running" is always answerable.
+
+.PARAMETER Model
+    Model id passed to the agent (e.g. opencode-go/deepseek-v4-pro). Use
+    `-Model auto` to deliberately accept the agent's own default.
+
 .EXAMPLE
-    .\scripts\local-fleet.ps1 -Agents 3 -Rounds 2
+    .\scripts\local-fleet.ps1 -Agents 3 -Rounds 2 -Model opencode-go/deepseek-v4-pro
+
+.EXAMPLE
+    .\scripts\local-fleet.ps1 -Agents 2 -Model opencode-go/deepseek-v4-pro -DryRun
 
 .EXAMPLE
     .\scripts\local-fleet.ps1 -Status
 
 .EXAMPLE
     .\scripts\local-fleet.ps1 -Stop
-
-.EXAMPLE
-    .\scripts\local-fleet.ps1 -Agents 2 -Agent opencode -Model opencode-go/deepseek-v4-pro
 #>
 [CmdletBinding()]
 param(
@@ -34,6 +43,8 @@ param(
     [string]$Approval = "auto_edit",
     [int]$Timeout = 1800,
     [string]$Repo = "",
+    [switch]$Yes,
+    [switch]$DryRun,
     [switch]$Status,
     [switch]$Stop,
     [switch]$Logs
@@ -67,11 +78,50 @@ function Resolve-Agent {
     if ($Requested) { return $Requested }
     $known = Join-Path $env:LOCALAPPDATA "Programs\ai.opencode.desktop\resources\opencode-cli.exe"
     if (Test-Path $known) { return $known }
-    foreach ($name in @("opencode", "claude", "codex", "gemini")) {
+    foreach ($name in @("opencode", "claude", "codex")) {
         $found = Get-Command $name -ErrorAction SilentlyContinue
         if ($found) { return $name }
     }
     Write-Error "no CLI agent found - pass -Agent <path to opencode/claude/codex>"
+}
+
+function Get-AvailableModels {
+    param([string]$AgentPath)
+    try {
+        $listed = & $AgentPath models 2>$null
+    } catch {
+        return @()
+    }
+    if ($LASTEXITCODE -ne 0 -or -not $listed) { return @() }
+    return @($listed | Where-Object { $_ -match "/" })
+}
+
+function Resolve-Model {
+    param([string]$Requested, [string]$AgentPath)
+    $available = Get-AvailableModels $AgentPath
+
+    if ($Requested -eq "auto") {
+        Write-Warning "-Model auto: the agent default will be used and NOT pinned. Prefer an explicit id for anything you plan to review."
+        return ""
+    }
+    if (-not $Requested) {
+        $sample = if ($available.Count -gt 0) {
+            ($available | Select-Object -First 12) -join "`n  "
+        } else { "(run: `"$AgentPath`" models)" }
+        Write-Error @"
+-Model is required: a local fleet never starts on an implicit model.
+
+Available (first 12 of $($available.Count)):
+  $sample
+
+Pass one of them, e.g.  -Model <id>
+Or pass -Model auto if you really mean "whatever the agent defaults to".
+"@
+    }
+    if ($available.Count -gt 0 -and $available -notcontains $Requested) {
+        Write-Error "model '$Requested' is not in the list this agent reports ($($available.Count) models). Run: `"$AgentPath`" models"
+    }
+    return $Requested
 }
 
 if (-not (Test-Path (Join-Path $Repo ".git"))) {
@@ -94,7 +144,8 @@ if ($Status) {
         foreach ($worker in $state.workers) {
             $alive = Get-Process -Id $worker.pid -ErrorAction SilentlyContinue
             $verdict = if ($alive) { "running" } else { "exited" }
-            "{0,-12} pid {1,-7} {2,-8} log {3}" -f $worker.holder, $worker.pid, $verdict, $worker.log
+            "{0,-12} pid {1,-7} {2,-8} model {3,-32} log {4}" -f `
+                $worker.holder, $worker.pid, $verdict, $(if ($worker.model) { $worker.model } else { "(agent default)" }), $worker.log
         }
     }
     exit 0
@@ -124,11 +175,28 @@ if ($Logs) {
 }
 
 # --- start ---------------------------------------------------------------
-New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $Agent = Resolve-Agent $Agent
+$Model = Resolve-Model $Model $Agent
 
 $agentCmd = "$python `"$adapter`" {brief} --agent `"$Agent`" --approval $Approval"
 if ($Model) { $agentCmd = "$agentCmd -m $Model" }
+
+$display = if ($Model) { "$Agent / $Model" } else { "$Agent / (agent default, not pinned)" }
+
+if ($DryRun) {
+    "agent:  $Agent"
+    "model:  $(if ($Model) { $Model } else { '(agent default)' })"
+    "agents: $Agents   rounds: $Rounds   timeout: ${Timeout}s"
+    "agent-cmd: $agentCmd"
+    exit 0
+}
+
+if (-not $Yes) {
+    $answer = Read-Host "Start $Agents worker(s) x $Rounds round(s) with $display ? [Y/n]"
+    if ($answer -and $answer -match "^(n|no)$") { "aborted"; exit 1 }
+}
+
+New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
 $workers = @()
 for ($i = 1; $i -le $Agents; $i++) {
@@ -139,15 +207,16 @@ for ($i = 1; $i -le $Agents; $i++) {
     $proc = Start-Process -FilePath $python -ArgumentList $argLine -WorkingDirectory $Repo `
         -RedirectStandardOutput $log -RedirectStandardError $errLog `
         -WindowStyle Hidden -PassThru
-    $workers += [pscustomobject]@{ holder = $holder; pid = $proc.Id; log = $log; rounds = $Rounds }
-    "started {0,-10} pid {1,-7} max-rounds {2}" -f $holder, $proc.Id, $Rounds
+    $workers += [pscustomobject]@{ holder = $holder; pid = $proc.Id; log = $log; rounds = $Rounds; model = $Model }
+    "started {0,-10} pid {1,-7} max-rounds {2} model {3}" -f $holder, $proc.Id, $Rounds, $(if ($Model) { $Model } else { "(agent default)" })
 }
 
-[pscustomobject]@{ repo = $Repo; agent = $Agent; started = (Get-Date).ToString("s"); workers = $workers } |
-    ConvertTo-Json -Depth 5 | Set-Content -Path $stateFile -Encoding utf8
+[pscustomobject]@{
+    repo = $Repo; agent = $Agent; model = $Model; started = (Get-Date).ToString("s"); workers = $workers
+} | ConvertTo-Json -Depth 5 | Set-Content -Path $stateFile -Encoding utf8
 
 ""
-"agent:   $Agent"
+"agent:   $display"
 "Watch:   Get-Content '$logDir\worker-1.log' -Wait"
 "State:   .\scripts\local-fleet.ps1 -Status"
 "Stop:    .\scripts\local-fleet.ps1 -Stop"

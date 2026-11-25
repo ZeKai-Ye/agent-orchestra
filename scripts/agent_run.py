@@ -193,6 +193,13 @@ def main(argv: list[str] | None = None) -> int:
         print("args: " + " ".join(command[1:4]) + (" ..." if len(command) > 4 else ""))
         return 0
 
+    if not args.model:
+        print(
+            f"agent_run: no -m given; {Path(str(args.agent)).name} will use its own default model. "
+            "A local fleet should always pin one (local-fleet.ps1 requires -Model).",
+            file=sys.stderr,
+        )
+
     try:
         completed = subprocess.run(command, cwd=str(worktree))
     except OSError as exc:

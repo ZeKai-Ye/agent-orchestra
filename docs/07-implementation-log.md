@@ -185,3 +185,27 @@ python -m unittest tests.test_gates -v
 
 - 慢 agent（sleep 1.2s，`--heartbeat 0.3`）：`lease.renewed` ≥ 1、`lease.expired` = 0、`lease_lost` = 0 → 说明续约真的在发生。
 - 被抢：agent 自己用独立连接 `UPDATE leases SET holder='intruder'` 再 sleep 1.5s → `lease_lost = 1`、`outcome=lease_lost`、任务没进 `review`、`gate.passed` = 0 → 说明丢租约就真停手，不是只记一笔日志。
+
+## v0.5.5 增补（多 agent 启动必须指定模型）
+
+**要求**：本机跑多 agent 编队时，模型必须显式确定，不允许隐式落到 agent 的默认模型上。
+
+**实现**（`scripts/local-fleet.ps1`）：
+
+- `-Model` 必填：不传直接 `Write-Error` 拒绝启动，并列出 `opencode models` 的前 12 个（共 N 个）。
+- 传 `-Model auto` 是**显式**接受 agent 默认：打 `Write-Warning`，之后 `fleet.json` 与 `-Status` 标注 `(agent default)`。
+- 模型 id 对照 `opencode models` 校验，拼错当场报错。
+- 新增 `-DryRun`：打印 agent / model / 参数行但不启动进程；新增 `-Yes` 跳过确认（非交互场景，例如脚本或自动化测试）。
+- 实际模型写进 `.orchestra/fleet.json` 的 `model` 字段，`-Status` 每个 worker 一行显示 → "现在跑的是哪个模型"永远可查。
+- `scripts/agent_run.py` 在没收到 `-m` 时向 stderr 打一行警告（单 agent 手动跑也看得见）。
+
+**实测**（`fleet-smoke` 临时仓库）：
+
+| 场景 | 结果 |
+|---|---|
+| `-Agents 1`（无 `-Model`） | 拒绝，列出 "Available (first 12 of 96)"，退出码非 0 |
+| `-Model no-such-model` | 拒绝：`not in the list this agent reports (96 models)` |
+| `-Model opencode-go/deepseek-v4-pro -DryRun` | 打印 `model: opencode-go/deepseek-v4-pro`，argv 里带 `-m` |
+| `-Model auto -DryRun` | 警告 + `model: (agent default)`，argv 里不带 `-m` |
+
+**顺带纠正一个错误结论**：上一版文档写"本机没有 `anthropic/*`"。实测同一台机器相邻两次 `opencode models` 分别返回 **81** 和 **96** 个模型，provider 组成也不同（`anthropic/*` 出现过）。这个目录是动态的，任何写死的数字或"有没有某 provider"的断言都会过期，已改为"以命令输出为准"。

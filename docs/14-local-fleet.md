@@ -99,19 +99,24 @@ python -m orchestra.cli --repo . task new --title "cli: 新增 dry-run 开关"  
 
 默认（自动探测 OpenCode CLI）：
 
-```powershell
-.\scripts\local-fleet.ps1 -Agents 3
-```
-
-指定模型：
+**模型是必填项**（v0.5.5 起）：
 
 ```powershell
-.\scripts\local-fleet.ps1 -Agents 2 -Model opencode-go/deepseek-v4-pro
+.\scripts\local-fleet.ps1 -Agents 2 -Model opencode-go/deepseek-v4-pro            # 正常用法
+.\scripts\local-fleet.ps1 -Agents 2 -Model opencode-go/deepseek-v4-pro -DryRun    # 只看会起什么，不真跑
+.\scripts\local-fleet.ps1 -Agents 2 -Model auto                                   # 显式接受 agent 的默认模型
 ```
 
-**不传 `-Model` 时用的是 opencode 自己的默认模型**：本机实测是 `opencode-go/hungerg-free`（免费档）。同一句 "Reply with exactly: PONG"，默认模型约 20 s，`opencode-go/deepseek-v4-pro` 3 s。可用模型用 `opencode models` 查（本机 81 个：`opencode/*` 47、`opencode-go/*` 33、`ollama/qwen3:8b` 1）。
+- 不传 `-Model` → **拒绝启动**，并列出可用模型。编队不会在"隐式默认模型"上跑。
+- 传 `-Model auto` → 打警告，`fleet.json` 与 `-Status` 里标注 `(agent default)`。
+- 模型 id 会对照 `opencode models` 校验，拼错当场报错，不会跑完一轮才发现。
+- 实际使用的模型记录在 `.orchestra/fleet.json`，`-Status` 每个 worker 一行显示。
 
-注意环境变量 `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_URL` 指向 `api.deepseek.com`：形如 `anthropic/*` 的模型名实际打到的也是 DeepSeek 的兼容端点，本机目录里目前没有 `anthropic/*` 条目，写 `-Model anthropic/...` 会直接失败。
+**模型目录是动态的**：同一台机器不同时刻 `opencode models` 分别报过 81 个和 96 个，provider 组成也变过（`opencode/*`、`opencode-go/*`、`ollama/*`，有时出现 `anthropic/*`）。**以命令输出为准**，不要把 id 写死进脚本或文档。
+
+**不传 `-m` 时** opencode 用它自己的默认模型（本机实测 `opencode-go/hungerg-free`，免费档）：同一句 "Reply with exactly: PONG"，默认约 20 s，`opencode-go/deepseek-v4-pro` 3 s。
+
+**环境变量要注意**：`ANTHROPIC_BASE_URL` / `ANTHROPIC_API_URL` 指向 `api.deepseek.com`。即使目录里出现 `anthropic/*` 条目，实际请求也落在 DeepSeek 的兼容端点上——名字与后端不一定对应。
 
 换别的 CLI（装好之后）：
 

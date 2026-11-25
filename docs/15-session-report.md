@@ -80,7 +80,7 @@ python -m orchestra.cli --repo . report --out reports/2026-11-24-session.md
 
 ## 7. 推荐的工作流
 
-1. 在项目 A 里跑编队：`.\\scripts\\local-fleet.ps1 -Agents 3 -Rounds 3`。
+1. 在项目 A 里跑编队：`.\\scripts\\local-fleet.ps1 -Agents 3 -Rounds 3 -Model <模型 id>`（模型必填，见 `docs/14`）。
 2. 收工或中途想看时：`python -m orchestra.cli --repo . report --hours 8`。
 3. 提交：`git add reports && git commit -m "log: session <日期>"`。报告是纯文本，diff 友好，也能跨机器看到。
 4. 把那份 Markdown（或路径）交给架构评审的 agent（比如我），说清楚"这是项目 A 的会话报告，请据此更新架构"。评审方拿到的就不是日志噪声，而是一份带计数和缺口的证据。
