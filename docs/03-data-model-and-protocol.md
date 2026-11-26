@@ -168,8 +168,16 @@ acceptance_digest does not match the criteria: they were edited after creation
 - agent 的 prompt 里逐条列出，并要求把证据写进 `notes/<task>.md`（`check` 写命令与退出码，`judge` 写 file:line 理由）；
 - `roadmap/items.jsonl` 的 `accept` 字符串在 `promote` 时转成 `A1|check|<accept 命令>|<标题>`；条目没有 `accept` 就不允许 promote。
 
-### 7.4 还没做的（v0.6.0 的边界）
+### 7.4 门禁怎么用这些标准（v0.6.1 起）
 
-- 门禁尚未执行 `check` 类条目（L3）；现在只是把它们交给 agent 自验。
-- 评审尚未逐条判定（L4）：`parse_verdict` 仍然是一条 verdict 判整单。
-- critic / research 任务由 `critic.py` 直接创建，暂时没有 acceptance（它们的"验收"是产出物本身）。
+`orchestra gate run` 为每条标准产生一个步骤，名字是 `acceptance:<id>`：
+
+- `check`：在 worktree 里执行 `criterion`（`shell=True`，1800 秒上限）。退出码 0 → 该步骤通过；否则失败，`detail` 里带命令与输出尾部两行，失败会进任务的 `dead_approaches`。
+- `judge`：不执行任何命令。只检查 `notes/<task>.md` 里有没有以 `<id>` 开头的证据行；有则通过并标注 `declared, not verified`——**门禁永远无法证明它成立**，这一步挡的是"连声明都没有"。
+- `notes/<task>.md` 被 scope 步骤豁免（它不在租约路径里，否则 agent 一写证据就判越界）。
+- 任务没有任何标准时：`impl` 阶段通过并注明 `no acceptance criteria declared (legacy task)`；**`merge` 阶段直接失败**——合并是对质量的最终声明，不能没有标准。
+
+### 7.5 还没做的
+
+- 评审仍是"一条 verdict 判整单"（L4）：`parse_verdict` 没有逐条 pass/fail/unclear 的强制结构。
+- `critic.py` 直接创建的 critic 任务没有 acceptance（它的验收物是 `reviews/<task>.md` 本身）。

@@ -4,6 +4,6 @@ The package is stdlib-only on purpose: it must run on any machine that already h
 Python 3.11+ and git, without a dependency install step. See docs/02-architecture.md.
 """
 
-__version__ = "0.6.0"
+__version__ = "0.6.1"
 
 __all__ = ["__version__"]

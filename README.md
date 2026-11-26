@@ -30,7 +30,9 @@ python -m orchestra.cli --repo D:\work\myrepo init
 #   ledger/intents/I-0001.md ->  ---  signed: true  author: kai  ---
 
 python -m orchestra.cli --repo D:\work\myrepo task new --title "修复配置加载的空指针" `
-  --role patch --domain core --lineage lineage-a --intent I-0001 --paths src/core
+  --role patch --domain core --lineage lineage-a --intent I-0001 --paths src/core `
+  --acceptance "A1|check|python -m unittest tests.test_config|空配置用例通过" `
+  --acceptance "A2|judge|报错信息里含配置键名|评审看 diff"
 
 # agent 领取任务：拿租约 + 状态迁移（WIP 上限、指纹查重都在这步）
 python -m orchestra.cli --repo D:\work\myrepo task claim --task T-0001 --holder agent-7

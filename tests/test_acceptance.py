@@ -87,3 +87,43 @@ class AcceptanceTests(AcceptanceCase):
         stored = json.loads((self.repo / "ledger" / "tasks" / f"{task_id}.json").read_text(encoding="utf-8"))
         self.assertEqual(stored["acceptance"][0]["class"], "check")
         self.assertIn("pass", stored["acceptance"][0]["criterion"])
+
+    def _claimed(self, task_id: str) -> None:
+        cli(self.repo, "task", "claim", "--task", task_id, "--holder", "agent-1", expect=0)
+        cli(self.repo, "task", "transition", "--task", task_id, "--to", "in_progress", expect=0)
+
+    def test_failing_check_criterion_blocks_the_gate(self):
+        task = self.make_task(
+            ["a.py"], acceptance=['A1|check|python -c "import sys; sys.exit(3)"|must fail']
+        )
+        self._claimed(task["id"])
+        proc = cli(self.repo, "gate", "run", "--task", task["id"], "--stage", "impl", expect=1)
+        self.assertIn("acceptance:A1", proc.stdout + proc.stderr)
+        self.assertIn("exit 3", proc.stdout + proc.stderr)
+
+    def test_judge_criterion_needs_declared_evidence(self):
+        task = self.make_task(["a.py"], acceptance=["A1|judge|the message names a file|"])
+        self._claimed(task["id"])
+
+        before = json.loads(
+            cli(self.repo, "gate", "run", "--task", task["id"], "--stage", "impl", "--json").stdout
+        )
+        step = {item["name"]: item for item in before["steps"]}["acceptance:A1"]
+        self.assertFalse(step["ok"])
+        self.assertIn("notes/", step["detail"])
+
+        self.write(f"notes/{task['id']}.md", f"A1: judged - src/core/app.py:12 names the file\n")
+        self.commit("notes: evidence")
+        after = json.loads(
+            cli(self.repo, "gate", "run", "--task", task["id"], "--stage", "impl", "--json").stdout
+        )
+        step = {item["name"]: item for item in after["steps"]}["acceptance:A1"]
+        self.assertTrue(step["ok"])
+        self.assertIn("declared, not verified", step["detail"])
+
+    def test_merge_without_criteria_is_refused(self):
+        task = self.make_task(["a.py"], no_acceptance=True)
+        self._claimed(task["id"])
+        cli(self.repo, "task", "transition", "--task", task["id"], "--to", "review", expect=0)
+        proc = cli(self.repo, "gate", "run", "--task", task["id"], "--stage", "merge", expect=1)
+        self.assertIn("a merge needs acceptance criteria", proc.stdout + proc.stderr)

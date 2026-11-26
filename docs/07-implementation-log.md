@@ -237,3 +237,20 @@ python -m unittest tests.test_gates -v
 全量 121 个测试通过。
 
 **已知边界**：`check` 类条目还没有进 gate 自动执行（L3）；评审仍是单条 verdict（L4）；`critic.py` 直接创建的 critic 任务没有 acceptance。这三条都写在 `docs/03` 7.4，不装作已完成。
+
+## v0.6.1 增补（L3：门禁真的执行 check 类验收标准）
+
+上一版把标准送到了执行方眼前，但 `check` 类条目仍然只是"要求 agent 自己跑一下"。本轮把它收回到机器手里。
+
+**实现**（`gates.run_gate`）：
+
+- 每条标准一个步骤，名字 `acceptance:<id>`，失败即整体门禁失败，`dead_approaches` 自动带上"哪条没过"。
+- `check`：在 worktree 里 `shell=True` 执行 `criterion`，1800s 上限；`detail` 带命令与输出尾部两行。
+- `judge`：不执行命令，只查 `notes/<task>.md` 有没有以该 id 开头的证据行；有则通过并写 `declared, not verified`。**这一步证明的是"声明过"，不是"成立"**——所以措辞写死在 detail 里，不给人误读的空间。
+- `notes/<task>.md` 加入 scope 豁免：证据文件不在租约路径里，否则 agent 一写证据就被判越界（这是实现时才会撞到的坑）。
+- 没有标准时：`impl` 阶段通过并注明 legacy；**`merge` 阶段失败**（"a merge needs acceptance criteria"）。合并是对质量的最终声明，不能没有标准。
+- `tests/support.make_task` 的默认标准从前一版的 `judge` 改成 `check|git status --short`，让既有流程测试继续真实地经过新步骤。
+
+**测试**：`tests/test_acceptance.py` 新增 3 个 —— 失败命令挡住门禁（`acceptance:A1` + `exit 3`）、`judge` 无证据失败/有证据通过且 detail 为 `declared, not verified`、无标准时 merge 被拒。全量 **124** 个测试通过。
+
+**仍未做**：L4（评审逐条 pass/fail/unclear）。见 `docs/03` 7.5。

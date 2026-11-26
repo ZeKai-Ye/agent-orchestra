@@ -61,8 +61,10 @@ merge = ["python -m unittest discover -s tests -t ."]
 - 所以切分原则是**按目录/模块切**，一条任务一个"谁都不会同时改"的文件集。
 
 ```powershell
-python -m orchestra.cli --repo . task new --title "parser: 支持嵌套括号" --paths src/parser/ --intent I-0001
-python -m orchestra.cli --repo . task new --title "cli: 新增 dry-run 开关"  --paths src/cli.py  --intent I-0001
+python -m orchestra.cli --repo . task new --title "parser: 支持嵌套括号" --paths src/parser/ --intent I-0001 `
+  --acceptance "A1|check|python -m unittest tests.test_parser -k nested|嵌套用例通过"
+python -m orchestra.cli --repo . task new --title "cli: 新增 dry-run 开关" --paths src/cli.py --intent I-0001 `
+  --acceptance "A1|check|python -m unittest tests.test_cli -k dry_run|dry-run 用例通过"
 ```
 
 租约写在 SQLite（单机原子），任务书写在 `ledger/tasks/T-xxxx.json`（可 diff、可 review）。这两份东西是唯一共享状态，agent 之间不通信。

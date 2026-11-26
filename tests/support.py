@@ -113,7 +113,8 @@ class RepoCase(unittest.TestCase):
         if kwargs.pop("no_acceptance", False):
             args += ["--no-acceptance"]
         else:
-            for criterion in acceptance or [f"A1|judge|{title} behaves as described|"]:
+            default = ["A1|check|git status --short|fixture default: always exits 0 in a repo"]
+            for criterion in acceptance or default:
                 args += ["--acceptance", criterion]
         for key, value in kwargs.items():
             args += [f"--{key.replace('_', '-')}", value]

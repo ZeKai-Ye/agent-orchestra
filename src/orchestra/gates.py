@@ -7,6 +7,7 @@ so a rejection is always a machine-readable fact rather than a review opinion.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -183,7 +184,12 @@ def run_gate(
     body = diff_text(work, base_ref) if changes else ""
     step("diff", bool(changes), f"{len(changes)} changed path(s) against {base_ref}")
 
-    outside = [path for _status, path in changes if not any(is_within(path, scope) for scope in task["paths"])]
+    evidence_rel = normalize(f"notes/{task_id}.md")
+    outside = [
+        path
+        for _status, path in changes
+        if not any(is_within(path, scope) for scope in task["paths"]) and normalize(path) != evidence_rel
+    ]
     step(
         "scope",
         not outside,
@@ -244,6 +250,55 @@ def run_gate(
             f"{total} lines <= {ceiling}" if total <= ceiling else f"{total} lines > budget {ceiling}",
         )
 
+    criteria = task.get("acceptance") or []
+    if not criteria:
+        step(
+            "acceptance",
+            stage != "merge",
+            "no acceptance criteria declared (legacy task)"
+            if stage != "merge"
+            else "a merge needs acceptance criteria: create the task with --acceptance",
+        )
+    else:
+        evidence_file = Path("notes") / f"{task_id}.md"
+        evidence = ""
+        if (work / evidence_file).exists():
+            evidence = (work / evidence_file).read_text(encoding="utf-8", errors="replace")
+        for entry in criteria:
+            cid = str(entry.get("id", "?"))
+            if entry.get("class") == "judge":
+                declared = re.search(rf"^\s*{re.escape(cid)}\b", evidence, re.M) is not None
+                step(
+                    f"acceptance:{cid}",
+                    declared,
+                    "declared, not verified: a judge criterion can be argued, never proven by a gate"
+                    if declared
+                    else f"no evidence line for {cid} in {evidence_file.as_posix()}",
+                    criterion=entry.get("criterion", ""),
+                )
+                continue
+            command = str(entry.get("criterion", ""))
+            try:
+                proc = subprocess.run(
+                    command,
+                    cwd=str(work),
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=1800,
+                )
+            except subprocess.TimeoutExpired:
+                step(f"acceptance:{cid}", False, f"timed out after 1800s: {command}", criterion=command)
+                continue
+            tail = (proc.stdout or proc.stderr or "").strip().splitlines()[-2:]
+            step(
+                f"acceptance:{cid}",
+                proc.returncode == 0,
+                f"{command} -> exit {proc.returncode}" + (f": {' | '.join(tail)}" if tail else ""),
+                criterion=command,
+            )
     if stage == "merge":
         message = head_message(work)
         has_trailer = f"Task-Id: {task_id}" in message
